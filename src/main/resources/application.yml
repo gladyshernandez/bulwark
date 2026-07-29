@@ -8,3 +8,7 @@ bulwark:
     base-url: ${UPSTREAM_BASE_URL:https://api.anthropic.com}
     # Supplied via environment; never commit a real key.
     api-key: ${ANTHROPIC_API_KEY:}
+  screening:
+    # block  = refuse on detection (prompt never reaches the model)
+    # flag   = log the detection and forward anyway (used to measure false positives)
+    mode: ${BULWARK_SCREENING_MODE:block}
