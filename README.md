@@ -6,7 +6,7 @@
 
 ## What's here (Day 1)
 
-An OpenAI-compatible proxy. Point any OpenAI client's base URL at Bulwark and it forwards `POST /v1/chat/completions` to the upstream provider unchanged, relaying the response. Detection runs *before* the forward, starting Day 2 (see the hook in `ChatProxyController`).
+An OpenAI-compatible proxy. Point any OpenAI client's base URL at Bulwark and it forwards `POST /v1/chat/completions` to the upstream provider unchanged, relaying the response. The default upstream is Anthropic's OpenAI-compatible layer (Claude models); swap `UPSTREAM_BASE_URL` to target any other OpenAI-compatible provider. Detection runs *before* the forward, starting Day 2 (see the hook in `ChatProxyController`).
 
 ```
 bulwark/
@@ -28,7 +28,7 @@ bulwark/
 Requires JDK 21 and Maven (or use the Docker path below).
 
 ```bash
-export OPENAI_API_KEY=sk-...          # your upstream provider key
+export ANTHROPIC_API_KEY=sk-ant-...   # your upstream provider key (Claude by default)
 mvn spring-boot:run
 ```
 
@@ -39,10 +39,10 @@ Verify:
 curl http://localhost:8080/health
 # -> {"status":"ok"}
 
-# proxied completion (uses your OPENAI_API_KEY against the upstream provider)
+# proxied completion (uses your ANTHROPIC_API_KEY against the upstream provider)
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}'
+  -d '{"model":"claude-3-5-haiku-latest","messages":[{"role":"user","content":"hello"}]}'
 ```
 
 **Done when:** an OpenAI client pointed at Bulwark's URL gets a normal completion back.
@@ -51,15 +51,15 @@ curl http://localhost:8080/v1/chat/completions \
 
 | Env var | Default | Purpose |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | — | Upstream provider API key (required) |
-| `UPSTREAM_BASE_URL` | `https://api.openai.com` | Upstream provider base URL |
+| `ANTHROPIC_API_KEY` | — | Upstream provider API key (required); used as the bearer token |
+| `UPSTREAM_BASE_URL` | `https://api.anthropic.com` | Upstream provider base URL (Anthropic's OpenAI-compatible layer) |
 | `PORT` | `8080` | Injected by Railway in production |
 
 ## Deploy to Railway
 
 1. Create a Railway project (Hobby plan) and add a PostgreSQL database (used from Day 3).
 2. Connect this GitHub repo — Railway builds via the `Dockerfile` and auto-deploys on push to `main`.
-3. Set `OPENAI_API_KEY` in the service's Variables.
+3. Set `ANTHROPIC_API_KEY` in the service's Variables.
 4. Hit `https://<your-service>.up.railway.app/health` → expect `{"status":"ok"}`.
 
 ## Next
