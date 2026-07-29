@@ -1,0 +1,10 @@
+server:
+  # Railway injects PORT; default to 8080 for local dev.
+  port: ${PORT:8080}
+
+bulwark:
+  upstream:
+    # Any OpenAI-compatible provider. Override with UPSTREAM_BASE_URL if needed.
+    base-url: ${UPSTREAM_BASE_URL:https://api.openai.com}
+    # Supplied via environment; never commit a real key.
+    api-key: ${OPENAI_API_KEY:}

@@ -1,0 +1,17 @@
+# Local dev database. Not needed for the Day 1 proxy, but Layers/audit log
+# (Day 3+) and the eval store use it. pgvector image is used so the vector
+# extension is available later without swapping images.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: bulwark
+      POSTGRES_PASSWORD: bulwark
+      POSTGRES_DB: bulwark
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
