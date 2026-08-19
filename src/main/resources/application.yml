@@ -16,6 +16,9 @@ bulwark:
     # open   = fail open, forward the request and record the gap
     # closed = fail closed, refuse because the input couldn't be fully screened
     on-degrade: ${BULWARK_ON_DEGRADE:open}
+    # Request fields carrying retrieved documents or tool output. Their text is screened as
+    # untrusted content (indirect injection), not just the user message. Empty disables this.
+    indirect-fields: ${BULWARK_INDIRECT_FIELDS:documents,context}
   layer2:
     # DeBERTa classifier sidecar. Leave the URL unset to disable Layer 2 (Layer 1 still runs);
     # when set but unreachable, Layer 2 fails open and records the gap. For local dev with the
