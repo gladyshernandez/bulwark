@@ -8,8 +8,9 @@ import org.springframework.stereotype.Service;
  *
  * <p>Layers escalate cheapest-first: Layer 1 runs first, Layer 2 runs only if Layer 1 came back
  * clean, and the Layer 3 judge runs only on inputs the cheaper layers pass but flag as uncertain.
- * The first layer to flag an injection determines the action; every layer that runs is logged,
- * audited, and metered so per-layer behaviour can be measured.
+ * The first layer that doesn't allow the request - an injection, or a degraded layer under a
+ * fail-closed policy - short-circuits the rest. Every layer that runs is logged, audited, and
+ * metered so per-layer behaviour can be measured.
  */
 @Service
 public class ScreeningService {
@@ -47,7 +48,7 @@ public class ScreeningService {
 
         ScreeningDecision d1 = layer1.scan(text);
         Action a1 = record(text, d1);
-        if (d1.isInjection()) {
+        if (a1 != Action.ALLOW) {
             return new ScreeningResult(extracted.model(), d1, a1);
         }
 
@@ -55,19 +56,18 @@ public class ScreeningService {
         if (layer2.isEnabled()) {
             d2 = layer2.scan(text);
             Action a2 = record(text, d2);
-            if (d2.isInjection()) {
+            if (a2 != Action.ALLOW) {
                 return new ScreeningResult(extracted.model(), d2, a2);
             }
-            // Clean or degraded: fall through - Layer 3 may still weigh in.
+            // Clean, or degraded under fail-open: fall through - Layer 3 may still weigh in.
         }
 
         if (layer3.shouldJudge(d2)) {
             ScreeningDecision d3 = layer3.scan(text);
             Action a3 = record(text, d3);
-            if (d3.isInjection()) {
+            if (a3 != Action.ALLOW) {
                 return new ScreeningResult(extracted.model(), d3, a3);
             }
-            // Clean or degraded: fall through and allow (fail-open).
         }
 
         return new ScreeningResult(extracted.model(), d1, a1);
@@ -83,7 +83,10 @@ public class ScreeningService {
     }
 
     private Action actionFor(ScreeningDecision decision) {
-        if (!decision.isInjection()) {
+        // Refuse a detected injection, or a layer that couldn't run when the policy is fail-closed.
+        boolean refuse = decision.isInjection()
+                || (decision.isDegraded() && props.onDegrade() == FailMode.CLOSED);
+        if (!refuse) {
             return Action.ALLOW;
         }
         return props.mode() == ScreeningMode.BLOCK ? Action.BLOCK : Action.FLAG;

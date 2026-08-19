@@ -35,6 +35,11 @@ class ScreeningServiceTest {
     }
 
     private ScreeningService serviceWith(ScreeningMode mode, ClassifierClient client, JudgeClient judge) {
+        return serviceWith(mode, FailMode.OPEN, client, judge);
+    }
+
+    private ScreeningService serviceWith(ScreeningMode mode, FailMode onDegrade,
+                                         ClassifierClient client, JudgeClient judge) {
         ObjectMapper mapper = new ObjectMapper();
         return new ScreeningService(
                 new MessageExtractor(mapper),
@@ -44,7 +49,7 @@ class ScreeningServiceTest {
                 new DecisionLog(),
                 new AuditLog(null),  // no database configured - audit is a no-op
                 new ScreeningMetrics(registry),
-                new ScreeningProperties(mode));
+                new ScreeningProperties(mode, onDegrade));
     }
 
     @Test
@@ -167,6 +172,40 @@ class ScreeningServiceTest {
 
         assertThat(result.action()).isEqualTo(Action.ALLOW);
         assertThat(result.isBlocked()).isFalse();
+    }
+
+    @Test
+    void failClosedBlocksWhenLayer2Degrades() {
+        // Layer 2 is enabled but unreachable; under fail-closed the request is refused.
+        ScreeningResult result = serviceWith(ScreeningMode.BLOCK, FailMode.CLOSED,
+                disabledScoreClient(), disabledJudge()).screen(BENIGN_BODY);
+
+        assertThat(result.action()).isEqualTo(Action.BLOCK);
+        assertThat(result.isBlocked()).isTrue();
+        assertThat(result.decision().layer()).isEqualTo(Layer2Classifier.LAYER);
+        assertThat(result.decision().isDegraded()).isTrue();
+    }
+
+    @Test
+    void failClosedBlocksWhenJudgeDegrades() {
+        // Layer 2 disabled -> the judge runs, but is unreachable; fail-closed refuses.
+        ScreeningResult result = serviceWith(ScreeningMode.BLOCK, FailMode.CLOSED,
+                disabledClient(), emptyJudge()).screen(BENIGN_BODY);
+
+        assertThat(result.action()).isEqualTo(Action.BLOCK);
+        assertThat(result.decision().layer()).isEqualTo(Layer3Judge.LAYER);
+        assertThat(result.decision().isDegraded()).isTrue();
+    }
+
+    @Test
+    void failClosedInFlagModeForwardsButFlagsTheGap() {
+        // Flag mode never blocks, even fail-closed: the gap is recorded and the request forwarded.
+        ScreeningResult result = serviceWith(ScreeningMode.FLAG, FailMode.CLOSED,
+                disabledScoreClient(), disabledJudge()).screen(BENIGN_BODY);
+
+        assertThat(result.action()).isEqualTo(Action.FLAG);
+        assertThat(result.isBlocked()).isFalse();
+        assertThat(result.decision().isDegraded()).isTrue();
     }
 
     // --- fake classifier clients ------------------------------------------------
