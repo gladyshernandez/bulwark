@@ -39,8 +39,8 @@ public class RefusalResponses {
         ObjectNode message = choice.putObject("message");
         message.put("role", "assistant");
         message.put("content",
-                "Request blocked by Bulwark: the prompt matched a prompt-injection "
-                        + "heuristic (" + decision.layer() + " / rule " + decision.rule()
+                "Request blocked by Bulwark: the prompt was flagged as a prompt-injection "
+                        + "by " + decision.layer() + " (rule " + decision.rule()
                         + "). No content was sent to the model.");
         choice.putNull("logprobs");
         choice.put("finish_reason", "content_filter");

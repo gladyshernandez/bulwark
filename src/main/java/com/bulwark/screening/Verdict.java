@@ -5,5 +5,7 @@ public enum Verdict {
     /** No injection signal found by this layer. */
     CLEAN,
     /** This layer detected a likely prompt injection. */
-    INJECTION
+    INJECTION,
+    /** This layer could not run (e.g. the classifier sidecar was unreachable). Treated as fail-open. */
+    DEGRADED
 }

@@ -9,8 +9,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Append-only audit sink. Persists one row per screened request - input hash (never
- * the prompt itself), per-layer verdict, matched rule, action, mode, and latency - to
- * Postgres via plain JDBC.
+ * the prompt itself), per-layer verdict, matched rule, classifier score, action, mode,
+ * and latency - to Postgres via plain JDBC.
  *
  * <p>Audit is strictly best-effort. When no database is configured the {@link JdbcTemplate}
  * is {@code null} and every call is a no-op; when the database is configured but unreachable,
@@ -29,16 +29,21 @@ public class AuditLog {
                 layer          VARCHAR(32) NOT NULL,
                 verdict        VARCHAR(16) NOT NULL,
                 rule           VARCHAR(64),
+                score          DOUBLE PRECISION,
                 action         VARCHAR(16) NOT NULL,
                 mode           VARCHAR(16) NOT NULL,
                 latency_micros BIGINT NOT NULL
             )
             """;
 
+    // Migrate audit tables created before Layer 2 added the classifier score column.
+    private static final String ADD_SCORE =
+            "ALTER TABLE bulwark_audit ADD COLUMN IF NOT EXISTS score DOUBLE PRECISION";
+
     private static final String INSERT = """
             INSERT INTO bulwark_audit
-                (input_hash, layer, verdict, rule, action, mode, latency_micros)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (input_hash, layer, verdict, rule, score, action, mode, latency_micros)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
     /** Null when audit is not configured. */
@@ -66,6 +71,7 @@ public class AuditLog {
                     decision.layer(),
                     decision.verdict().name(),
                     decision.rule(),
+                    decision.score(),
                     action.name(),
                     mode.name(),
                     decision.latencyMicros());
@@ -84,6 +90,7 @@ public class AuditLog {
             return;
         }
         jdbc.execute(DDL);
+        jdbc.execute(ADD_SCORE);
         schemaReady.set(true);
     }
 }

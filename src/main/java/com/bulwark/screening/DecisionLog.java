@@ -21,10 +21,11 @@ public class DecisionLog {
     private static final Logger log = LoggerFactory.getLogger("bulwark.decision");
 
     public void record(String inputText, ScreeningDecision decision, ScreeningMode mode, Action action) {
-        log.info("layer={} verdict={} rule={} action={} mode={} latencyMicros={} inputHash={}",
+        log.info("layer={} verdict={} rule={} score={} action={} mode={} latencyMicros={} inputHash={}",
                 decision.layer(),
                 decision.verdict(),
                 decision.rule(),
+                decision.score(),
                 action,
                 mode,
                 decision.latencyMicros(),
