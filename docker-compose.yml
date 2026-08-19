@@ -1,6 +1,4 @@
-# Local dev database. Not needed for the Day 1 proxy, but Layers/audit log
-# (Day 3+) and the eval store use it. pgvector image is used so the vector
-# extension is available later without swapping images.
+# pgvector image is used so the vector extension is available later without swapping images
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -12,6 +10,15 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+
+  # Layer 2 DeBERTa injection classifier. The proxy calls it at http://localhost:8000
+  # when BULWARK_LAYER2_URL points here; if it's down, Layer 2 fails open.
+  classifier:
+    build: ./classifier
+    environment:
+      MODEL_ID: protectai/deberta-v3-base-prompt-injection
+    ports:
+      - "8000:8000"
 
 volumes:
   pgdata:
