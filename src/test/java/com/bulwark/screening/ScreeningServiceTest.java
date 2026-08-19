@@ -1,6 +1,7 @@
 package com.bulwark.screening;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,6 +24,8 @@ class ScreeningServiceTest {
                 new MessageExtractor(mapper),
                 new Layer1Scanner(),
                 new DecisionLog(),
+                new AuditLog(null),  // no database configured - audit is a no-op
+                new ScreeningMetrics(new SimpleMeterRegistry()),
                 new ScreeningProperties(mode));
     }
 
