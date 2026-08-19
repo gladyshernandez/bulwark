@@ -16,3 +16,6 @@ target/
 
 # Logs
 *.log
+
+# Internal spec
+src/main/resources/bulwark spec/
