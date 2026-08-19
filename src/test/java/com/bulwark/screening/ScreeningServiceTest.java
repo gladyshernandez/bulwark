@@ -1,10 +1,12 @@
 package com.bulwark.screening;
 
 import com.bulwark.config.Layer2Properties;
+import com.bulwark.config.Layer3Properties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
+import java.util.Optional;
 import java.util.OptionalDouble;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,17 +25,22 @@ class ScreeningServiceTest {
 
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
 
-    /** Service with Layer 2 disabled - the original Layer-1-only behaviour. */
+    /** Service with Layers 2 and 3 disabled - the original Layer-1-only behaviour. */
     private ScreeningService serviceWith(ScreeningMode mode) {
-        return serviceWith(mode, disabledClient());
+        return serviceWith(mode, disabledClient(), disabledJudge());
     }
 
     private ScreeningService serviceWith(ScreeningMode mode, ClassifierClient client) {
+        return serviceWith(mode, client, disabledJudge());
+    }
+
+    private ScreeningService serviceWith(ScreeningMode mode, ClassifierClient client, JudgeClient judge) {
         ObjectMapper mapper = new ObjectMapper();
         return new ScreeningService(
                 new MessageExtractor(mapper),
                 new Layer1Scanner(),
                 new Layer2Classifier(client, new Layer2Properties(null, 0.5, 800)),
+                new Layer3Judge(judge, new Layer3Properties(true, "key", "claude-haiku-4-5", 0.2, 4000)),
                 new DecisionLog(),
                 new AuditLog(null),  // no database configured - audit is a no-op
                 new ScreeningMetrics(registry),
@@ -123,6 +130,45 @@ class ScreeningServiceTest {
         assertThat(degraded).isEqualTo(1.0);
     }
 
+    @Test
+    void layer3JudgeCatchesWhatLayer1And2Miss() {
+        // Layer 2 disabled, so every Layer-1-clean input is uncertain and reaches the judge.
+        ScreeningResult result = serviceWith(ScreeningMode.BLOCK, disabledClient(),
+                judgingClient(true, "tries to override instructions")).screen(BENIGN_BODY);
+
+        assertThat(result.action()).isEqualTo(Action.BLOCK);
+        assertThat(result.decision().layer()).isEqualTo(Layer3Judge.LAYER);
+        assertThat(result.decision().evidence()).isEqualTo("tries to override instructions");
+    }
+
+    @Test
+    void layer3JudgeFiresInsideTheUncertaintyBand() {
+        // Score 0.30: below the 0.5 block threshold but at/above the 0.2 floor - uncertain.
+        ScreeningResult result = serviceWith(ScreeningMode.BLOCK, scoringClient(0.30),
+                judgingClient(true, "subtle override")).screen(BENIGN_BODY);
+
+        assertThat(result.action()).isEqualTo(Action.BLOCK);
+        assertThat(result.decision().layer()).isEqualTo(Layer3Judge.LAYER);
+    }
+
+    @Test
+    void confidentlyCleanInputSkipsTheJudge() {
+        // Score 0.05 is below the floor; the judge (which would throw) must not be consulted.
+        ScreeningResult result = serviceWith(ScreeningMode.BLOCK, scoringClient(0.05),
+                poisonJudge()).screen(BENIGN_BODY);
+
+        assertThat(result.action()).isEqualTo(Action.ALLOW);
+    }
+
+    @Test
+    void layer3FailsOpenWhenTheJudgeIsUnreachable() {
+        ScreeningResult result = serviceWith(ScreeningMode.BLOCK, disabledClient(),
+                emptyJudge()).screen(BENIGN_BODY);
+
+        assertThat(result.action()).isEqualTo(Action.ALLOW);
+        assertThat(result.isBlocked()).isFalse();
+    }
+
     // --- fake classifier clients ------------------------------------------------
 
     private static ClassifierClient disabledClient() {
@@ -157,6 +203,49 @@ class ScreeningServiceTest {
             @Override
             public OptionalDouble injectionScore(String text) {
                 throw new AssertionError("Layer 2 must not be consulted after a Layer 1 hit");
+            }
+
+            @Override
+            public boolean isEnabled() {
+                return true;
+            }
+        };
+    }
+
+    // --- fake judge clients -----------------------------------------------------
+
+    private static JudgeClient disabledJudge() {
+        return judge(false, Optional.empty());
+    }
+
+    private static JudgeClient judgingClient(boolean injection, String reason) {
+        return judge(true, Optional.of(new JudgeClient.Judgement(injection, reason)));
+    }
+
+    /** Enabled but never answers - exercises the fail-open path. */
+    private static JudgeClient emptyJudge() {
+        return judge(true, Optional.empty());
+    }
+
+    private static JudgeClient judge(boolean enabled, Optional<JudgeClient.Judgement> reply) {
+        return new JudgeClient() {
+            @Override
+            public Optional<Judgement> judge(String text) {
+                return reply;
+            }
+
+            @Override
+            public boolean isEnabled() {
+                return enabled;
+            }
+        };
+    }
+
+    private static JudgeClient poisonJudge() {
+        return new JudgeClient() {
+            @Override
+            public Optional<Judgement> judge(String text) {
+                throw new AssertionError("Layer 3 must not be consulted for a confidently-clean input");
             }
 
             @Override
