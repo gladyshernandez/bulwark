@@ -12,6 +12,15 @@ bulwark:
     # block  = refuse on detection (prompt never reaches the model)
     # flag   = log the detection and forward anyway (used to measure false positives)
     mode: ${BULWARK_SCREENING_MODE:block}
+  layer2:
+    # DeBERTa classifier sidecar. Leave the URL unset to disable Layer 2 (Layer 1 still runs);
+    # when set but unreachable, Layer 2 fails open and records the gap. For local dev with the
+    # docker-compose sidecar, set BULWARK_LAYER2_URL=http://localhost:8000.
+    url: ${BULWARK_LAYER2_URL:}
+    # Injection probability at or above which the input is treated as an injection.
+    threshold: ${BULWARK_LAYER2_THRESHOLD:0.5}
+    # Connect/read timeout per classify call, in milliseconds.
+    timeout-millis: ${BULWARK_LAYER2_TIMEOUT_MS:800}
   # Audit log (optional) is configured purely by environment so that unset means the
   # property is truly absent - which is what switches the audit DataSource off. Set these
   # to enable append-only persistence of decisions to Postgres
