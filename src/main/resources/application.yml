@@ -21,6 +21,19 @@ bulwark:
     threshold: ${BULWARK_LAYER2_THRESHOLD:0.5}
     # Connect/read timeout per classify call, in milliseconds.
     timeout-millis: ${BULWARK_LAYER2_TIMEOUT_MS:800}
+  layer3:
+    # LLM judge (optional, off by default). It runs only on inputs the cheaper layers pass but
+    # can't clear, and calls a cheap Claude model directly.
+    enabled: ${BULWARK_LAYER3_ENABLED:false}
+    # Anthropic API key for the judge
+    api-key: ${ANTHROPIC_API_KEY:}
+    # The Claude model the judge reasons with. Override it at runtime with BULWARK_LAYER3_MODEL (e.g. claude-sonnet-5)
+    model: ${BULWARK_LAYER3_MODEL:claude-haiku-4-5}
+    # Layer 2 score at or above which a passed input is 'uncertain' and escalated to the judge;
+    # inputs the classifier scored below this are confidently clean and skip the judge.
+    uncertainty-floor: ${BULWARK_LAYER3_FLOOR:0.2}
+    # Per-call timeout for the judge, in milliseconds; on timeout Layer 3 fails open.
+    timeout-millis: ${BULWARK_LAYER3_TIMEOUT_MS:4000}
   # Audit log (optional) is configured purely by environment so that unset means the
   # property is truly absent - which is what switches the audit DataSource off. Set these
   # to enable append-only persistence of decisions to Postgres
