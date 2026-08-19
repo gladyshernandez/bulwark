@@ -12,3 +12,20 @@ bulwark:
     # block  = refuse on detection (prompt never reaches the model)
     # flag   = log the detection and forward anyway (used to measure false positives)
     mode: ${BULWARK_SCREENING_MODE:block}
+  # Audit log (optional) is configured purely by environment so that unset means the
+  # property is truly absent - which is what switches the audit DataSource off. Set these
+  # to enable append-only persistence of decisions to Postgres
+  #   BULWARK_AUDIT_JDBC_URL       jdbc:postgresql://host:5432/bulwark
+  #   BULWARK_AUDIT_DB_USER
+  #   BULWARK_AUDIT_DB_PASSWORD
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Grafana Cloud scrapes /actuator/prometheus.
+        include: health,info,prometheus
+  health:
+    # The audit database is optional; don't let an unreachable Postgres flip health to DOWN
+    db:
+      enabled: false
