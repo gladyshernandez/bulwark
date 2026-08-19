@@ -2,6 +2,9 @@ package com.bulwark.screening;
 
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Orchestrates screening for a chat-completion request: extract the text, run the detection
  * layers in increasing order of cost, decide the action from the configured mode, and log it.
@@ -71,6 +74,30 @@ public class ScreeningService {
         }
 
         return new ScreeningResult(extracted.model(), d1, a1);
+    }
+
+    /** Each enabled layer's independent verdict on a request, echoed with the requested model. */
+    public record PerLayerResult(String model, List<ScreeningDecision> layers) {}
+
+    /**
+     * Run every enabled layer independently over the request - no short-circuit, no judge-gating -
+     * so each layer's standalone detection can be measured. Purely diagnostic: unlike {@link #screen},
+     * these runs are not logged, audited, or metered. Layer 3 runs only when enabled, since it calls
+     * a paid model on every input.
+     */
+    public PerLayerResult screenPerLayer(String body) {
+        MessageExtractor.ExtractedRequest extracted = extractor.extract(body);
+        String text = extracted.text();
+
+        List<ScreeningDecision> layers = new ArrayList<>();
+        layers.add(layer1.scan(text));
+        if (layer2.isEnabled()) {
+            layers.add(layer2.scan(text));
+        }
+        if (layer3.isEnabled()) {
+            layers.add(layer3.scan(text));
+        }
+        return new PerLayerResult(extracted.model(), layers);
     }
 
     /** Log, audit, and meter one layer's decision, returning the action it implies. */
