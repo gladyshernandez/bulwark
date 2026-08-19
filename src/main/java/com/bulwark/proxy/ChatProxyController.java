@@ -17,6 +17,9 @@ import org.springframework.web.bind.annotation.RestController;
  * BLOCK mode a detected injection short-circuits into an OpenAI-shaped refusal and
  * the prompt never reaches upstream; in FLAG mode (and when clean) the request is
  * forwarded unchanged - the decision is logged either way.
+ *
+ * <p>{@code POST /v1/screen} exposes the same screening without forwarding: it returns just the
+ * decision, so the evaluation harness can score many prompts without paying for upstream calls.
  */
 @RestController
 public class ChatProxyController {
@@ -50,5 +53,17 @@ public class ChatProxyController {
                 .status(response.getStatusCode())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(response.getBody());
+    }
+
+    /**
+     * Screen a request and return only the decision - the prompt is never forwarded upstream.
+     * Same detection path as {@code /v1/chat/completions}, exposed for the evaluation harness.
+     */
+    @PostMapping(
+            value = "/v1/screen",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ScreeningReport screen(@RequestBody String body) {
+        return ScreeningReport.from(screening.screen(body));
     }
 }
