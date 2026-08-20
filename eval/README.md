@@ -71,3 +71,20 @@ judge on every prompt, so turn it on deliberately.
 
 To use Lakera's own `pint-benchmark.ipynb`, import `make_pint_eval_function(client, detector)` from
 `pint.py` — it returns an `eval_function(text) -> bool` in the shape the notebook expects.
+
+## Results table
+
+`metrics.py` builds the full results table — per layer and the full stack: detection rate,
+false-positive rate, mean latency, an estimated cost, and which layer catches what in the stack.
+
+```bash
+python metrics.py --limit 25                       # sampled
+python metrics.py --judge-model claude-haiku-4-5   # model used for the Layer 3 cost estimate
+```
+
+Layer 1 and Layer 2 are self-hosted (cost = latency only); Layer 3 calls a paid model, so its cost
+is estimated from prompt length and price (turn Layer 3 on to include it). Writes `metrics.json`
+and a markdown `results.md`.
+
+Warm the Layer 2 sidecar before a scored run — cold-start requests can exceed the classify timeout
+and degrade, undercounting Layer 2's detection.
