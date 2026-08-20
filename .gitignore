@@ -24,3 +24,5 @@ src/main/resources/bulwark spec/
 eval/.venv/
 __pycache__/
 eval/*.jsonl
+eval/metrics.json
+eval/results.md
