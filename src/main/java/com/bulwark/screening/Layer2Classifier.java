@@ -9,11 +9,10 @@ import java.util.OptionalDouble;
  * Layer 2 — a pre-trained DeBERTa injection classifier served by a sidecar.
  *
  * <p>Runs only on inputs Layer 1 let through, adding coverage on paraphrased and obfuscated
- * injections at real (~tens of ms) latency. The sidecar returns an injection probability; Layer 2
- * blocks on its own only when highly confident (score at or above {@code bulwark.layer2.threshold}).
- * Lower-but-not-clean scores are left for the judge to decide rather than blocked here, which trades
- * a little cost for fewer false alarms. When the sidecar is unreachable the scan is
- * {@link Verdict#DEGRADED} - the request fails open and the gap is recorded rather than silently dropped.
+ * injections at real (~tens of ms) latency. The sidecar returns an injection probability; an
+ * input scoring at or above {@code bulwark.layer2.threshold} is an injection. When the sidecar
+ * is unreachable the scan is {@link Verdict#DEGRADED} - the request fails open and the gap is
+ * recorded rather than silently dropped.
  */
 @Component
 public class Layer2Classifier {

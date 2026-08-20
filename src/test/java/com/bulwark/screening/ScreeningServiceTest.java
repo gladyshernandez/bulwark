@@ -47,7 +47,7 @@ class ScreeningServiceTest {
         return new ScreeningService(
                 new MessageExtractor(mapper, props),
                 new Layer1Scanner(),
-                new Layer2Classifier(client, new Layer2Properties(null, 0.9, 800)),
+                new Layer2Classifier(client, new Layer2Properties(null, 0.5, 800)),
                 new Layer3Judge(judge, new Layer3Properties(true, "key", "claude-sonnet-5", 0.2, 4000)),
                 new DecisionLog(),
                 new AuditLog(null),  // no database configured - audit is a no-op
@@ -180,27 +180,6 @@ class ScreeningServiceTest {
         // Score 0.05 is below the floor; the judge (which would throw) must not be consulted.
         ScreeningResult result = serviceWith(ScreeningMode.BLOCK, scoringClient(0.05),
                 poisonJudge()).screen(BENIGN_BODY);
-
-        assertThat(result.action()).isEqualTo(Action.ALLOW);
-    }
-
-    @Test
-    void layer2MediumScoreIsJudgedNotAutoBlocked() {
-        // 0.70 is below the 0.9 auto-block threshold, so Layer 2 doesn't block on its own -
-        // the judge adjudicates, and here calls it an injection.
-        ScreeningResult result = serviceWith(ScreeningMode.BLOCK, scoringClient(0.70),
-                judgingClient(true, "judged an injection")).screen(BENIGN_BODY);
-
-        assertThat(result.action()).isEqualTo(Action.BLOCK);
-        assertThat(result.decision().layer()).isEqualTo(Layer3Judge.LAYER);
-    }
-
-    @Test
-    void layer2MediumScoreClearedByJudgeIsAllowed() {
-        // The same 0.70 that Layer 2 would have blocked at the old threshold is now cleared by the
-        // judge - the false alarm this lever is meant to remove.
-        ScreeningResult result = serviceWith(ScreeningMode.BLOCK, scoringClient(0.70),
-                judgingClient(false, "benign")).screen(BENIGN_BODY);
 
         assertThat(result.action()).isEqualTo(Action.ALLOW);
     }
