@@ -52,3 +52,22 @@ python run.py --base-url http://host     # target a remote Bulwark
 
 Output is `results.jsonl` — one row per prompt with its label and Bulwark's decision
 (`flagged`, `action`, `verdict`, `layer`, `rule`, `score`, `latency_micros`).
+
+## pint-benchmark scoring (per-layer + full stack)
+
+`pint.py` scores each layer independently and the full stack, and prints a per-detector table
+(detection rate, false-positive rate, accuracy). Per-layer verdicts come from `POST
+/v1/screen/layers`, which runs each enabled layer on its own (no escalation gating).
+
+```bash
+python pint.py --limit 25                 # score the bundled datasets, sampled
+python pint.py --dataset path/to/pint.yaml  # score a pint-format YAML ({text,category,label})
+python pint.py --no-stack                 # per-layer only (skip the end-to-end call)
+```
+
+Enable Layer 2 (`BULWARK_LAYER2_URL`) / Layer 3 (`BULWARK_LAYER3_ENABLED`) on the Bulwark side to
+measure them — with only Layer 1 on, only `layer1-regex` appears. Measuring Layer 3 runs the paid
+judge on every prompt, so turn it on deliberately.
+
+To use Lakera's own `pint-benchmark.ipynb`, import `make_pint_eval_function(client, detector)` from
+`pint.py` — it returns an `eval_function(text) -> bool` in the shape the notebook expects.
