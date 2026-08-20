@@ -23,9 +23,18 @@ class Decision:
     error: str | None = None
 
 
+@dataclass
+class LayerVerdicts:
+    """Each enabled layer's independent verdict on one prompt."""
+    flags: dict[str, bool]    # layer name -> flagged (True = that layer alone called it an injection)
+    error: str | None = None
+
+
 class BulwarkClient:
     def __init__(self, base_url: str = "http://localhost:8080", timeout: float = 30.0):
-        self.url = base_url.rstrip("/") + "/v1/screen"
+        base = base_url.rstrip("/")
+        self.url = base + "/v1/screen"
+        self.layers_url = base + "/v1/screen/layers"
         self.timeout = timeout
 
     def screen(self, text: str) -> Decision:
@@ -48,3 +57,15 @@ class BulwarkClient:
             score=data.get("score"),
             latency_micros=data.get("latencyMicros"),
         )
+
+    def screen_layers(self, text: str) -> LayerVerdicts:
+        """Each enabled layer's independent verdict, for per-layer measurement."""
+        body = {"model": "eval", "messages": [{"role": "user", "content": text}]}
+        try:
+            resp = requests.post(self.layers_url, json=body, timeout=self.timeout)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            return LayerVerdicts(flags={}, error=str(e))
+        flags = {layer["layer"]: bool(layer.get("flagged")) for layer in data.get("layers", [])}
+        return LayerVerdicts(flags=flags)
