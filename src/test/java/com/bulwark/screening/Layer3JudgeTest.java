@@ -25,7 +25,7 @@ class Layer3JudgeTest {
     }
 
     private Layer3Judge judgeWith(FakeJudge client) {
-        return new Layer3Judge(client, new Layer3Properties(true, "key", "claude-haiku-4-5", FLOOR, 4000));
+        return new Layer3Judge(client, new Layer3Properties(true, "key", "claude-sonnet-5", FLOOR, 4000));
     }
 
     private static ScreeningDecision layer2Clean(double score) {
