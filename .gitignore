@@ -23,4 +23,4 @@ src/main/resources/bulwark spec/
 # Python eval harness
 eval/.venv/
 __pycache__/
-eval/results*.jsonl
+eval/*.jsonl
