@@ -66,4 +66,16 @@ public class ChatProxyController {
     public ScreeningReport screen(@RequestBody String body) {
         return ScreeningReport.from(screening.screen(body));
     }
+
+    /**
+     * Screen a request through each enabled layer independently and return every layer's verdict.
+     * Used by the benchmark to measure per-layer detection; nothing is forwarded upstream.
+     */
+    @PostMapping(
+            value = "/v1/screen/layers",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public PerLayerReport screenLayers(@RequestBody String body) {
+        return PerLayerReport.from(screening.screenPerLayer(body));
+    }
 }
