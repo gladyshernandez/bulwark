@@ -7,7 +7,7 @@ import java.util.Map;
 
 /**
  * Minimal liveness endpoint. Railway's healthcheck points here.
- * (Actuator-based metrics/health come on Day 3.)
+ * Richer metrics and health live under the Actuator endpoints.
  */
 @RestController
 public class HealthController {

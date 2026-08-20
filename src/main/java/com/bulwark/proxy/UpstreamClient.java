@@ -12,8 +12,8 @@ import org.springframework.web.client.RestClient;
  * Thin client that forwards a raw chat-completion request body to the upstream
  * provider and returns the upstream response verbatim (status + body).
  *
- * Day 1 behaviour: pure pass-through. No request modeling, no screening.
- * Detection layers are added on later days and run BEFORE this call.
+ * Pure pass-through: no request modeling of its own. Screening runs earlier,
+ * so only requests that passed the detection layers reach this call.
  */
 @Component
 public class UpstreamClient {
