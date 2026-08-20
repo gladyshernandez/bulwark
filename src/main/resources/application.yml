@@ -25,8 +25,9 @@ bulwark:
     # when set but unreachable, Layer 2 fails open and records the gap. For local dev with the
     # docker-compose sidecar, set BULWARK_LAYER2_URL=http://localhost:8000.
     url: ${BULWARK_LAYER2_URL:}
-    # Injection probability at or above which the input is treated as an injection.
-    threshold: ${BULWARK_LAYER2_THRESHOLD:0.5}
+    # Score at or above which Layer 2 blocks on its own (high confidence). Lower scores that are
+    # still at or above the Layer 3 floor go to the judge to decide instead of blocking here.
+    threshold: ${BULWARK_LAYER2_THRESHOLD:0.9}
     # Connect/read timeout per classify call, in milliseconds.
     timeout-millis: ${BULWARK_LAYER2_TIMEOUT_MS:800}
   layer3:
