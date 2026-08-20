@@ -39,7 +39,7 @@ def main() -> None:
     p.add_argument("--base-url", default="http://localhost:8080")
     p.add_argument("--dataset", help="pint-format YAML; omit to use the bundled datasets")
     p.add_argument("--limit", type=int, default=None, help="per-source cap")
-    p.add_argument("--judge-model", default="claude-haiku-4-5", help="Layer 3 model, for cost")
+    p.add_argument("--judge-model", default="claude-sonnet-5", help="Layer 3 model, for cost")
     p.add_argument("--json-out", default="eval/metrics.json")
     p.add_argument("--md-out", default="eval/results.md")
     args = p.parse_args()

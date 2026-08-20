@@ -79,7 +79,7 @@ false-positive rate, mean latency, an estimated cost, and which layer catches wh
 
 ```bash
 python metrics.py --limit 25                       # sampled
-python metrics.py --judge-model claude-haiku-4-5   # model used for the Layer 3 cost estimate
+python metrics.py --judge-model claude-sonnet-5   # model used for the Layer 3 cost estimate
 ```
 
 Layer 1 and Layer 2 are self-hosted (cost = latency only); Layer 3 calls a paid model, so its cost
