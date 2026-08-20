@@ -60,7 +60,8 @@ public class AnthropicJudgeClient implements JudgeClient {
         try {
             MessageCreateParams params = MessageCreateParams.builder()
                     .model(model)
-                    .maxTokens(256L)
+                    // Leave room for the short JSON verdict plus any thinking that newer models do before answering
+                    .maxTokens(1024L)
                     .system(SYSTEM_PROMPT)
                     .addUserMessage(text == null ? "" : text)
                     .build();

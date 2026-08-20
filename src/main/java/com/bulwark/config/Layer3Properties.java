@@ -12,7 +12,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * @param enabled          master switch; the judge is skipped entirely when false
  * @param apiKey           Anthropic API key, defaulted from ANTHROPIC_API_KEY
- * @param model            the Claude model id to judge with, e.g. {@code claude-haiku-4-5}
+ * @param model            the Claude model id to judge with, e.g. {@code claude-sonnet-5}
  * @param uncertaintyFloor Layer 2 score at or above which a passed input escalates to the judge
  * @param timeoutMillis    per-call timeout; on timeout the judge fails open
  */
