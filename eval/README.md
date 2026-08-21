@@ -13,7 +13,7 @@ Works out of the box (open on the Hub):
 
 - **deepset/prompt-injections** — labeled mix: injections (attack) + legitimate prompts (benign)
 - **Gandalf** (Lakera) — attack
-- **NotInject** (`leolee99/NotInject`) — benign prompts full of injection trigger-words (over-defense probes)
+- **NotInject** (`leolee99/NotInject`) — benign prompts that contain injection trigger-words
 
 Gated on the Hub — loaded only when authenticated (`huggingface-cli login` or `HF_TOKEN`), skipped
 with a warning otherwise:
