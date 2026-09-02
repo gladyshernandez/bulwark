@@ -46,8 +46,8 @@ bulwark:
   # property is truly absent - which is what switches the audit DataSource off. Set these
   # to enable append-only persistence of decisions to Postgres
   #   BULWARK_AUDIT_JDBC_URL       jdbc:postgresql://host:5432/bulwark
-  #   BULWARK_AUDIT_DB_USER
-  #   BULWARK_AUDIT_DB_PASSWORD
+  #   BULWARK_AUDIT_USERNAME
+  #   BULWARK_AUDIT_PASSWORD
 
 management:
   endpoints:

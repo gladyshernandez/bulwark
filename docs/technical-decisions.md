@@ -32,12 +32,11 @@ setup. Fine-tuning was out of scope.
 
 ## Why an LLM judge, and which model
 
-The judge handles the inputs that reach it — the ones the cheaper layers pass. It sends the input to a
-Claude model and gets back a verdict with a short reason. In the sample run it had the highest detection
-rate and no false positives.
+The judge is the catch-all for the subtle cases the regex and classifier miss. It returns a verdict with
+a short reason, and in the sample run it had the highest detection rate and no false positives.
 
-It defaults to `claude-sonnet-5` and is off unless enabled: it is the slow, paid layer, and even when on
-it runs only on inputs the classifier didn't settle.
+It defaults to `claude-sonnet-5`, and it's off unless you enable it — it's the slow, paid layer, so you
+turn it on deliberately.
 
 ## Injection vs jailbreak
 
