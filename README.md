@@ -1,5 +1,7 @@
 # Bulwark
 
+[![CI](https://github.com/gladyshernandez/bulwark/actions/workflows/ci.yml/badge.svg)](https://github.com/gladyshernandez/bulwark/actions/workflows/ci.yml)
+
 **A measured LLM prompt-injection firewall** — a language-agnostic proxy that screens LLM traffic for prompt injection in three layers, and honestly measures what each layer catches, misses, and wrongly blocks.
 
 ## What it is
