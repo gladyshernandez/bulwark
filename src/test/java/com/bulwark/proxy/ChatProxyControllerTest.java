@@ -46,6 +46,10 @@ class ChatProxyControllerTest {
         return new ScreeningResult("gpt-test", null, Action.BLOCK);
     }
 
+    private static ScreeningResult flag() {
+        return new ScreeningResult("gpt-test", null, Action.FLAG);
+    }
+
     private static StreamingResponseBody writing(String text) {
         return out -> out.write(text.getBytes(StandardCharsets.UTF_8));
     }
@@ -112,5 +116,25 @@ class ChatProxyControllerTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"ok\":true")));
 
         verify(upstream, never()).streamChatCompletion(any());
+    }
+
+    @Test
+    void flaggedRequestStillForwardsUpstream() throws Exception {
+        // Flag mode records the detection but does not block, so the request is forwarded like a clean one.
+        given(screening.screen(any())).willReturn(flag());
+        given(upstream.forwardChatCompletion(any()))
+                .willReturn(org.springframework.http.ResponseEntity.ok("{\"ok\":true}"));
+
+        MvcResult started = mvc.perform(post("/v1/chat/completions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"messages\":[]}"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        mvc.perform(asyncDispatch(started))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"ok\":true")));
+
+        verify(upstream).forwardChatCompletion(any());
     }
 }
