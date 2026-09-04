@@ -7,6 +7,9 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
+
+import java.io.InputStream;
 
 /**
  * Thin client that forwards a raw chat-completion request body to the upstream
@@ -45,5 +48,34 @@ public class UpstreamClient {
                     // Relay upstream errors as-is instead of throwing.
                 })
                 .toEntity(String.class);
+    }
+
+    /**
+     * Forward a {@code stream: true} request and relay the upstream SSE response
+     * chunk-by-chunk, flushing each chunk so the caller sees tokens as they arrive
+     * instead of after the whole response is buffered. The upstream bytes are passed
+     * through verbatim; the response is not screened.
+     *
+     * <p>The upstream call runs inside the returned body, when the servlet writes the
+     * response, so the connection stays open for the life of the stream.
+     */
+    public StreamingResponseBody streamChatCompletion(String body) {
+        return outputStream -> restClient.post()
+                .uri("/v1/chat/completions")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
+                .header(HttpHeaders.ACCEPT, MediaType.TEXT_EVENT_STREAM_VALUE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .exchange((request, response) -> {
+                    try (InputStream in = response.getBody()) {
+                        byte[] buffer = new byte[8192];
+                        int read;
+                        while ((read = in.read(buffer)) != -1) {
+                            outputStream.write(buffer, 0, read);
+                            outputStream.flush();
+                        }
+                    }
+                    return null;
+                });
     }
 }
