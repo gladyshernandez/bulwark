@@ -20,6 +20,10 @@ bulwark:
     # untrusted content (indirect injection), not just the user message. Add your app's own
     # field names as needed; empty disables this.
     indirect-fields: ${BULWARK_INDIRECT_FIELDS:documents,context,sources,retrieved,tool_results}
+  metrics:
+    # Bearer token guarding /actuator/prometheus. Blank leaves the endpoint open (local dev);
+    # set BULWARK_METRICS_TOKEN in production so only your metrics scraper can read it.
+    token: ${BULWARK_METRICS_TOKEN:}
   layer2:
     # DeBERTa classifier sidecar. Leave the URL unset to disable Layer 2 (Layer 1 still runs);
     # when set but unreachable, Layer 2 fails open and records the gap. For local dev with the
