@@ -1,0 +1,26 @@
+{
+  "seed": 42,
+  "limit_per_source": 800,
+  "total": 3261,
+  "counts": {
+    "deepset/attack/dev": 65,
+    "deepset/attack/test": 138,
+    "deepset/benign/dev": 110,
+    "deepset/benign/test": 233,
+    "gandalf/attack/dev": 225,
+    "gandalf/attack/test": 551,
+    "hackaprompt/attack/dev": 234,
+    "hackaprompt/attack/test": 566,
+    "notinject/benign/dev": 95,
+    "notinject/benign/test": 244,
+    "wildguard/benign/dev": 234,
+    "wildguard/benign/test": 566
+  },
+  "dataset_revisions": {
+    "deepset": "4f61ecb038e9c3fb77e21034b22511b523772cdd",
+    "gandalf": "04737b65e90a6794ec227012e4a255a7def6344b",
+    "notinject": "847ae76cf8fea5ed325429e569ae8cfef022d2e0",
+    "hackaprompt": "25b87fbedfb86840abaf8cd09af7a029208a971a",
+    "wildguard": "d29c47f41c8b51348b5c8e8c81c039b3132b66d1"
+  }
+}

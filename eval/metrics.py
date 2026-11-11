@@ -39,6 +39,8 @@ def main() -> None:
     p.add_argument("--base-url", default="http://localhost:8080")
     p.add_argument("--dataset", help="pint-format YAML; omit to use the bundled datasets")
     p.add_argument("--limit", type=int, default=None, help="per-source cap")
+    p.add_argument("--sample", help="frozen sample from build_sample.py (recommended)")
+    p.add_argument("--split", choices=["dev", "test", "all"], default="test")
     p.add_argument("--judge-model", default="claude-sonnet-5", help="Layer 3 model, for cost")
     p.add_argument("--json-out", default="eval/metrics.json")
     p.add_argument("--md-out", default="eval/results.md")
@@ -54,7 +56,7 @@ def main() -> None:
     contribution: dict[str, int] = {}   # of attacks the stack caught, which layer decided
     total = 0
 
-    for _, text, is_attack in load_records(args.dataset, args.limit):
+    for _, text, is_attack, _source in load_records(args.dataset, args.limit, args.sample, args.split):
         lv = client.screen_layers(text)
         if lv.error:
             continue

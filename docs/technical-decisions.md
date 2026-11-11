@@ -65,3 +65,21 @@ inside a retrieved document is checked like any other input.
 Bulwark scores each layer on its own and the full stack, reporting detection rate, false-positive rate,
 latency, and cost — including the attacks that get through. It runs on public datasets and can be used
 with Lakera's pint-benchmark. See [`eval/`](../eval/README.md).
+
+## Why a frozen sample with a dev/test split
+
+The eval draws a seeded random sample from each dataset and freezes it to a file, rather than
+re-streaming the datasets on every run. Two problems made this necessary:
+
+- **A random sample, not the first N rows.** The old harness took the first rows of each dataset, which
+  are often unrepresentative. Sampling now uses a reservoir draw seeded per source — random but
+  reproducible — so adding a source later doesn't reshuffle the others.
+- **A held-out test split.** The block threshold was originally tuned on the same prompts the results
+  were reported on. The tuning had effectively seen the test answers, so the numbers looked better than
+  they were. Each prompt is now assigned to a dev split (~30%, for tuning and model choice) or a test
+  split (~70%, for reported numbers) by hashing its text. The assignment is stable — a prompt always
+  lands in the same split, whatever the seed or run order — so the two never leak into each other.
+
+The frozen sample's text stays out of git, because the gated datasets can't be redistributed. A small
+manifest is committed instead — the seed, the per-source counts, and each dataset's Hub revision — so the
+exact sample can be rebuilt without redistributing anyone's data.

@@ -26,3 +26,5 @@ __pycache__/
 eval/*.jsonl
 eval/metrics.json
 eval/results.md
+# frozen sample + smoke files; the manifest (eval/sample-manifest.json) stays tracked
+eval/data/
