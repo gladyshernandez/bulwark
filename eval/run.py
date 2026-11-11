@@ -1,7 +1,7 @@
 """Run every dataset prompt through Bulwark and record its decision.
 
-Load the public attack/benign corpora, screen each prompt via POST /v1/screen, and write one result row per prompt. It does NOT
-compute detection / false-positive rates yet.
+Load the public attack/benign corpora, screen each prompt via POST /v1/screen, and write one result row per prompt.
+For detection and false-positive rates, use `metrics.py`.
 """
 import argparse
 import json

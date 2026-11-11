@@ -2,8 +2,8 @@
 
 Runs public prompt-injection datasets through a live Bulwark instance and records the decision for
 every prompt. This is the foundation for the measurement work: it produces a results file pairing
-each prompt's ground-truth label with Bulwark's verdict. Computing detection and false-positive
-rates from that file comes later.
+each prompt's ground-truth label with Bulwark's verdict. `metrics.py` turns that into per-layer
+detection rate, false-positive rate, latency and estimated cost.
 
 ## Datasets
 
