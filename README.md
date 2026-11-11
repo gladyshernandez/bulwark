@@ -4,9 +4,7 @@
 
 **A measured LLM prompt-injection firewall** — a language-agnostic proxy that screens LLM traffic for prompt injection in three layers, and honestly measures what each layer catches, misses, and wrongly blocks.
 
-**Live demo:** <https://bulwark-production.up.railway.app>
-<!-- When the Grafana dashboard and Loom walkthrough exist, paste them here, e.g.:
-**Dashboard:** <GRAFANA_PUBLIC_URL> · **Walkthrough:** <LOOM_URL> -->
+**Live demo:** <https://bulwark-production.up.railway.app> · **Dashboard:** <https://fearlessjunco1791.grafana.net/public-dashboards/af89549ee5a54eff9119316aeb47a187>
 
 On a 200-prompt sample, the full three-layer stack **detects 82% of attacks**, **wrongly blocks ~10% of legitimate prompts**, and **lets ~18% of attacks through**. Measuring that honestly is the point — see [Results](#results--what-each-layer-buys).
 
@@ -48,28 +46,41 @@ flowchart LR
 bulwark/
 ├── pom.xml
 ├── Dockerfile                     # Railway build
+├── railway.json                   # pinned build, /health check, restart policy
 ├── docker-compose.yml             # local Postgres + classifier sidecar
 ├── .env.example
+├── .github/workflows/ci.yml       # Maven tests on push
 ├── classifier/                    # Layer 2 DeBERTa sidecar (Python / FastAPI)
-│   ├── app.py                     # POST /classify → injection probability
-│   ├── Dockerfile
-│   └── requirements.txt
+│   └── app.py                     # POST /classify → injection probability
+├── eval/                          # Python eval harness (see eval/README.md)
+│   ├── run.py                     # screen datasets, write per-prompt results
+│   ├── metrics.py                 # per-layer + full-stack results table
+│   ├── datasets_loader.py         # public datasets → {id, text, label, source}
+│   ├── pint.py                    # PINT-format loader + tallies
+│   └── client.py                  # HTTP client for /v1/screen endpoints
+├── docs/
+│   ├── technical-decisions.md
+│   └── limitations.md
 └── src/main/java/com/bulwark/
     ├── BulwarkApplication.java
     ├── HealthController.java       # GET /health
-    ├── config/UpstreamProperties.java
-    ├── config/Layer2Properties.java   # bulwark.layer2.* binding
-    ├── config/Layer3Properties.java   # bulwark.layer3.* binding
+    ├── config/
+    │   ├── UpstreamProperties.java, Layer2Properties.java, Layer3Properties.java
+    │   ├── MetricsAuthFilter.java     # bearer-token guard on /actuator/prometheus
+    │   └── AuditConfig.java           # Postgres audit DataSource, on only when configured
     ├── proxy/
-    │   ├── ChatProxyController.java   # POST /v1/chat/completions
-    │   └── UpstreamClient.java        # forwards to the upstream provider
+    │   ├── ChatProxyController.java   # POST /v1/chat/completions, /v1/screen, /v1/screen/layers
+    │   └── UpstreamClient.java        # forwards upstream; relays SSE when stream:true
     └── screening/
         ├── Layer1Scanner.java         # regex/heuristic detection
         ├── Layer2Classifier.java      # DeBERTa classifier, escalated after Layer 1
-        ├── ClassifierClient.java      # sidecar client, fails open when unreachable
+        ├── HttpClassifierClient.java  # sidecar client, fails open when unreachable
         ├── Layer3Judge.java           # LLM judge, runs only on uncertain inputs
         ├── AnthropicJudgeClient.java  # judge client (Anthropic SDK), fails open
+        ├── MessageExtractor.java      # user text + indirect fields to screen
         ├── ScreeningService.java      # orchestration + block/flag decision
+        ├── ScreeningMetrics.java      # Prometheus counters/timers per layer
+        ├── AuditLog.java              # append-only decision persistence
         ├── RefusalResponses.java      # OpenAI-shaped refusal builder
         └── DecisionLog.java           # structured per-request decision log
 ```
@@ -182,6 +193,12 @@ The judge runs only on inputs the cheaper layers pass but can't clear, and block
 | `BULWARK_LAYER3_MODEL` | `claude-sonnet-5` | Claude model the judge uses; any Anthropic model id |
 | `BULWARK_LAYER3_FLOOR` | `0.2` | Layer 2 score at or above which a passed input escalates to the judge |
 | `BULWARK_LAYER3_TIMEOUT_MS` | `4000` | Per-call judge timeout in ms; on timeout Layer 3 fails open |
+| `BULWARK_ON_DEGRADE` | `open` | `open` = forward when a layer can't run and record the gap; `closed` = refuse |
+| `BULWARK_INDIRECT_FIELDS` | `documents,context,sources,retrieved,tool_results` | Request fields screened as untrusted content (indirect injection); empty disables |
+| `BULWARK_METRICS_TOKEN` | — (open) | Bearer token guarding `/actuator/prometheus`; set it in production |
+| `BULWARK_AUDIT_JDBC_URL` | — (disabled) | Postgres JDBC URL; setting it enables the append-only audit log |
+| `BULWARK_AUDIT_USERNAME` | — | Audit database user |
+| `BULWARK_AUDIT_PASSWORD` | — | Audit database password |
 | `PORT` | `8080` | Server port |
 
 ## Deploy to Railway

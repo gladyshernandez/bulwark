@@ -2,8 +2,8 @@
 
 Runs public prompt-injection datasets through a live Bulwark instance and records the decision for
 every prompt. This is the foundation for the measurement work: it produces a results file pairing
-each prompt's ground-truth label with Bulwark's verdict. Computing detection and false-positive
-rates from that file comes later.
+each prompt's ground-truth label with Bulwark's verdict. `metrics.py` turns that into per-layer
+detection rate, false-positive rate, latency and estimated cost.
 
 ## Datasets
 
@@ -27,9 +27,9 @@ to authenticating.
 ## Setup
 
 ```bash
-python -m venv .venv
-.venv/Scripts/activate       # Windows;  source .venv/bin/activate on macOS/Linux
-pip install -r requirements.txt
+python -m venv eval/.venv
+source eval/.venv/bin/activate        # Windows: eval\.venv\Scripts\activate
+pip install -r eval/requirements.txt
 ```
 
 ## Run
@@ -42,15 +42,15 @@ forwarding upstream — no API key or cost needed):
 mvn spring-boot:run
 ```
 
-Then screen the datasets. Use `--limit` to sample while iterating:
+Then, from the repo root, screen the datasets. Use `--limit` to sample while iterating:
 
 ```bash
-python run.py --limit 50                 # 50 prompts per source, quick check
-python run.py                            # full corpora
-python run.py --base-url http://host     # target a remote Bulwark
+python eval/run.py --limit 50            # 50 prompts per source, quick check
+python eval/run.py                       # full corpora
+python eval/run.py --base-url http://host  # target a remote Bulwark
 ```
 
-Output is `results.jsonl` — one row per prompt with its label and Bulwark's decision
+Output is `eval/results.jsonl` — one row per prompt with its label and Bulwark's decision
 (`flagged`, `action`, `verdict`, `layer`, `rule`, `score`, `latency_micros`).
 
 ## pint-benchmark scoring (per-layer + full stack)
@@ -60,9 +60,9 @@ Output is `results.jsonl` — one row per prompt with its label and Bulwark's de
 /v1/screen/layers`, which runs each enabled layer on its own (no escalation gating).
 
 ```bash
-python pint.py --limit 25                 # score the bundled datasets, sampled
-python pint.py --dataset path/to/pint.yaml  # score a pint-format YAML ({text,category,label})
-python pint.py --no-stack                 # per-layer only (skip the end-to-end call)
+python eval/pint.py --limit 25            # score the bundled datasets, sampled
+python eval/pint.py --dataset path/to/pint.yaml  # score a pint-format YAML ({text,category,label})
+python eval/pint.py --no-stack           # per-layer only (skip the end-to-end call)
 ```
 
 Enable Layer 2 (`BULWARK_LAYER2_URL`) / Layer 3 (`BULWARK_LAYER3_ENABLED`) on the Bulwark side to
@@ -78,13 +78,13 @@ To use Lakera's own `pint-benchmark.ipynb`, import `make_pint_eval_function(clie
 false-positive rate, mean latency, an estimated cost, and which layer catches what in the stack.
 
 ```bash
-python metrics.py --limit 25                       # sampled
-python metrics.py --judge-model claude-sonnet-5   # model used for the Layer 3 cost estimate
+python eval/metrics.py --limit 25                  # sampled
+python eval/metrics.py --judge-model claude-sonnet-5  # model used for the Layer 3 cost estimate
 ```
 
 Layer 1 and Layer 2 are self-hosted (cost = latency only); Layer 3 calls a paid model, so its cost
-is estimated from prompt length and price (turn Layer 3 on to include it). Writes `metrics.json`
-and a markdown `results.md`.
+is estimated from prompt length and price (turn Layer 3 on to include it). Writes `eval/metrics.json`
+and a markdown `eval/results.md`.
 
 Warm the Layer 2 sidecar before a scored run — cold-start requests can exceed the classify timeout
 and degrade, undercounting Layer 2's detection.
