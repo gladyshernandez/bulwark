@@ -65,17 +65,25 @@ class Tally:
         return (self.tp + self.tn) / n if n else 0.0
 
 
-def load_records(dataset: str | None, limit: int | None) -> Iterator[tuple[str, str, bool]]:
-    """Yield (id, text, is_attack). From a pint-format YAML if given, else other datasets."""
-    if dataset:
+def load_records(dataset: str | None, limit: int | None,
+                 sample: str | None = None, split: str = "all") -> Iterator[tuple[str, str, bool, str]]:
+    """Yield (id, text, is_attack, source). From a frozen sample, a pint YAML, or the live datasets."""
+    if sample:
+        with Path(sample).open(encoding="utf-8") as f:
+            for line in f:
+                r = json.loads(line)
+                if split == "all" or r["split"] == split:
+                    yield r["id"], r["text"], r["label"] == "attack", r["source"]
+    elif dataset:
         import yaml
         rows = yaml.safe_load(Path(dataset).read_text(encoding="utf-8"))
         for i, r in enumerate(rows):
-            yield f"pint-{i}", r["text"], bool(r["label"])
+            yield f"pint-{i}", r["text"], bool(r["label"]), "pint"
     else:
         from datasets_loader import load_all
         for rec in load_all(limit_per_source=limit):
-            yield rec.id, rec.text, rec.label == "attack"
+            if split == "all" or rec.split == split:
+                yield rec.id, rec.text, rec.label == "attack", rec.source
 
 
 def main() -> None:
@@ -83,6 +91,8 @@ def main() -> None:
     p.add_argument("--base-url", default="http://localhost:8080")
     p.add_argument("--dataset", help="pint-format YAML {text,category,label}; omit to use the bundled datasets")
     p.add_argument("--limit", type=int, default=None, help="per-source cap when using the corpora")
+    p.add_argument("--sample", help="frozen sample from build_sample.py (recommended)")
+    p.add_argument("--split", choices=["dev", "test", "all"], default="test")
     p.add_argument("--no-stack", action="store_true", help="skip the end-to-end call (per-layer only)")
     p.add_argument("--out", default="eval/pint_results.jsonl")
     args = p.parse_args()
@@ -97,7 +107,7 @@ def main() -> None:
     total, errors = 0, 0
 
     with out.open("w", encoding="utf-8") as f:
-        for rid, text, is_attack in load_records(args.dataset, args.limit):
+        for rid, text, is_attack, source in load_records(args.dataset, args.limit, args.sample, args.split):
             lv = client.screen_layers(text)
             if lv.error:
                 errors += 1
