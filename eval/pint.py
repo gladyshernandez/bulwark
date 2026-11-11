@@ -104,27 +104,37 @@ def main() -> None:
     tallies: dict[str, Tally] = {}
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    total, errors = 0, 0
+    total = 0
+    errors = {"layers": 0, "stack": 0}
 
     with out.open("w", encoding="utf-8") as f:
         for rid, text, is_attack, source in load_records(args.dataset, args.limit, args.sample, args.split):
             lv = client.screen_layers(text)
+            stack = None if args.no_stack else client.screen(text)
+            # A failed call isn't a detector's judgment: skip the prompt so every detector scores
+            # the same set, instead of counting the failure as a miss or a correct pass.
             if lv.error:
-                errors += 1
+                errors["layers"] += 1
+                continue
+            if stack is not None and stack.error:
+                errors["stack"] += 1
                 continue
             row = {"id": rid, "attack": is_attack, "layers": lv.flags}
             for layer, flagged in lv.flags.items():
                 tallies.setdefault(layer, Tally()).add(is_attack, flagged)
-            if not args.no_stack:
-                stack = client.screen(text).flagged
-                row["stack"] = stack
-                tallies.setdefault("stack", Tally()).add(is_attack, stack)
+            if stack is not None:
+                row["stack"] = stack.flagged
+                tallies.setdefault("stack", Tally()).add(is_attack, stack.flagged)
             f.write(json.dumps(row) + "\n")
             total += 1
             if total % 200 == 0:
                 print(f"  ...{total} prompts", file=sys.stderr)
 
-    print(f"\nscored {total} prompts ({errors} errors) -> {out}\n")
+    failed = sum(errors.values())
+    if failed > 0.01 * (total + failed):
+        sys.exit(f"{failed} failed calls (>1%): warm the classifier, raise timeouts, and re-run")
+
+    print(f"\nscored {total} prompts; skipped failed calls: {errors} -> {out}\n")
     header = (f"{'detector':16}{'attacks':>8}{'caught':>8}{'det.rate':>10}"
               f"{'benign':>8}{'FP':>5}{'FP.rate':>9}{'acc':>8}")
     print(header)

@@ -54,11 +54,19 @@ def main() -> None:
     latency_us: dict[str, list[int]] = {}
     cost: dict[str, float] = {}
     contribution: dict[str, int] = {}   # of attacks the stack caught, which layer decided
+    errors = {"layers": 0, "stack": 0}
     total = 0
 
     for _, text, is_attack, _source in load_records(args.dataset, args.limit, args.sample, args.split):
         lv = client.screen_layers(text)
+        stack = client.screen(text)
+        # A failed call isn't a detector's judgment. Skip the whole prompt so every detector is
+        # scored on the same set, rather than counting the failure as a miss or a correct pass.
         if lv.error:
+            errors["layers"] += 1
+            continue
+        if stack.error:
+            errors["stack"] += 1
             continue
         for layer, flagged in lv.flags.items():
             tallies.setdefault(layer, Tally()).add(is_attack, flagged)
@@ -66,7 +74,6 @@ def main() -> None:
         if "layer3-judge" in lv.flags:
             cost["layer3-judge"] = cost.get("layer3-judge", 0.0) + estimate_judge_cost(text, args.judge_model)
 
-        stack = client.screen(text)
         tallies.setdefault("stack", Tally()).add(is_attack, stack.flagged)
         latency_us.setdefault("stack", []).append(stack.latency_micros or 0)
         if stack.flagged and is_attack and stack.layer:
@@ -74,6 +81,10 @@ def main() -> None:
         total += 1
         if total % 200 == 0:
             print(f"  ...{total} prompts", file=sys.stderr)
+
+    failed = sum(errors.values())
+    if failed > 0.01 * (total + failed):
+        sys.exit(f"{failed} failed calls (>1%): warm the classifier, raise timeouts, and re-run")
 
     order = ["layer1-regex", "layer2-deberta", "layer3-judge", "stack"]
     rows = []
@@ -95,11 +106,12 @@ def main() -> None:
             "est_cost_usd": round(cost.get(d, 0.0), 4),
         })
 
-    report = {"prompts": total, "detectors": rows, "stack_contribution": contribution}
+    report = {"prompts": total, "detectors": rows, "stack_contribution": contribution, "errors": errors}
     Path(args.json_out).write_text(json.dumps(report, indent=2), encoding="utf-8")
     Path(args.md_out).write_text(render_markdown(report), encoding="utf-8")
 
     print("\n" + render_markdown(report))
+    print(f"\nscored {total} prompts; skipped failed calls: {errors}")
     print(f"\nwrote {args.json_out} and {args.md_out}")
 
 
