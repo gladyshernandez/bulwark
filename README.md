@@ -181,6 +181,12 @@ The judge runs only on inputs the cheaper layers pass but can't clear, and block
 | `BULWARK_LAYER3_MODEL` | `claude-sonnet-5` | Claude model the judge uses; any Anthropic model id |
 | `BULWARK_LAYER3_FLOOR` | `0.2` | Layer 2 score at or above which a passed input escalates to the judge |
 | `BULWARK_LAYER3_TIMEOUT_MS` | `4000` | Per-call judge timeout in ms; on timeout Layer 3 fails open |
+| `BULWARK_ON_DEGRADE` | `open` | `open` = forward when a layer can't run and record the gap; `closed` = refuse |
+| `BULWARK_INDIRECT_FIELDS` | `documents,context,sources,retrieved,tool_results` | Request fields screened as untrusted content (indirect injection); empty disables |
+| `BULWARK_METRICS_TOKEN` | — (open) | Bearer token guarding `/actuator/prometheus`; set it in production |
+| `BULWARK_AUDIT_JDBC_URL` | — (disabled) | Postgres JDBC URL; setting it enables the append-only audit log |
+| `BULWARK_AUDIT_USERNAME` | — | Audit database user |
+| `BULWARK_AUDIT_PASSWORD` | — | Audit database password |
 | `PORT` | `8080` | Server port |
 
 ## Deploy to Railway
