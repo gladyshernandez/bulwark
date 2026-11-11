@@ -15,6 +15,7 @@ from datasets import load_dataset
 
 ATTACK = "attack"
 BENIGN = "benign"
+DEV_PERCENT = 30  # ~30% dev (tuning / model choice), ~70% test (reported numbers)
 
 
 @dataclass
@@ -23,6 +24,7 @@ class Record:
     text: str
     label: str
     source: str
+    split: str = ""  # "dev" or "test"
 
 
 def _normalise(text: str) -> str:
@@ -31,6 +33,11 @@ def _normalise(text: str) -> str:
 
 def _digest(text: str) -> bytes:
     return hashlib.sha1(_normalise(text).encode("utf-8")).digest()
+
+
+def split_for(text: str) -> str:
+    """Stable dev/test assignment from the text itself."""
+    return "dev" if int.from_bytes(_digest(text)[:4], "big") % 100 < DEV_PERCENT else "test"
 
 
 def _unique(rows: Iterator[Record]) -> Iterator[Record]:
@@ -123,6 +130,7 @@ def load_all(limit_per_source: int | None = None, seed: int = 42) -> Iterator[Re
                     dropped += 1
                     continue
                 seen[d] = rec.label
+                rec.split = split_for(rec.text)
                 kept += 1
                 yield rec
             print(f"  loaded {name}: {kept} (cross-source dupes dropped: {dropped})", file=sys.stderr)
