@@ -13,10 +13,22 @@ import argparse
 import json
 import sys
 from dataclasses import dataclass
+from math import sqrt
 from pathlib import Path
 from typing import Iterator
 
 from client import BulwarkClient
+
+
+def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """95% Wilson score interval for k successes out of n."""
+    if n == 0:
+        return (0.0, 0.0)
+    p = k / n
+    denom = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    half = z * sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return (max(0.0, centre - half), min(1.0, centre + half))
 
 
 def make_pint_eval_function(client: BulwarkClient, detector: str = "stack"):
@@ -63,6 +75,14 @@ class Tally:
     def accuracy(self) -> float:
         n = self.tp + self.fp + self.tn + self.fn
         return (self.tp + self.tn) / n if n else 0.0
+
+    @property
+    def detection_ci(self) -> tuple[float, float]:  # 95% interval on the detection rate
+        return wilson(self.tp, self.attacks)
+
+    @property
+    def fp_ci(self) -> tuple[float, float]:  # 95% interval on the false-positive rate
+        return wilson(self.fp, self.benign)
 
 
 def load_records(dataset: str | None, limit: int | None,
