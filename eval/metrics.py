@@ -11,6 +11,7 @@ machine-readable metrics.json and a markdown results table.
 import argparse
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from client import BulwarkClient
@@ -56,6 +57,7 @@ def main() -> None:
     p.add_argument("--sample", help="frozen sample from build_sample.py (recommended)")
     p.add_argument("--split", choices=["dev", "test", "all"], default="test")
     p.add_argument("--judge-model", default="claude-sonnet-5", help="Layer 3 model, for cost")
+    p.add_argument("--workers", type=int, default=4, help="parallel requests (keep low with Layer 3 on)")
     p.add_argument("--json-out", default="eval/metrics.json")
     p.add_argument("--md-out", default="eval/results.md")
     args = p.parse_args()
@@ -73,37 +75,42 @@ def main() -> None:
     stack_degraded = 0
     total = 0
 
-    for _, text, is_attack, source in load_records(args.dataset, args.limit, args.sample, args.split):
-        lv = client.screen_layers(text)
-        stack = client.screen(text)
-        # A failed call isn't a detector's judgment. Skip the whole prompt so every detector is
-        # scored on the same set, rather than counting the failure as a miss or a correct pass.
-        if lv.error:
-            errors["layers"] += 1
-            continue
-        if stack.error:
-            errors["stack"] += 1
-            continue
-        if "DEGRADED" in lv.verdicts.values():
-            errors["layer_degraded"] += 1   # a layer couldn't run: not its judgment, don't score it
-            continue
-        if stack.verdict == "DEGRADED":
-            stack_degraded += 1             # real fail-open behaviour; report it, keep it scored
-        for layer, flagged in lv.flags.items():
-            tallies.setdefault(layer, Tally()).add(is_attack, flagged)
-            by_source.setdefault((layer, source), Tally()).add(is_attack, flagged)
-            latency_us.setdefault(layer, []).append(lv.latencies.get(layer, 0))
-        if "layer3-judge" in lv.flags:
-            cost["layer3-judge"] = cost.get("layer3-judge", 0.0) + estimate_judge_cost(text, args.judge_model)
+    records = load_records(args.dataset, args.limit, args.sample, args.split)
 
-        tallies.setdefault("stack", Tally()).add(is_attack, stack.flagged)
-        by_source.setdefault(("stack", source), Tally()).add(is_attack, stack.flagged)
-        latency_us.setdefault("stack", []).append(stack.latency_micros or 0)
-        if stack.flagged and is_attack and stack.layer:
-            contribution[stack.layer] = contribution.get(stack.layer, 0) + 1
-        total += 1
-        if total % 200 == 0:
-            print(f"  ...{total} prompts", file=sys.stderr)
+    def score_one(item):
+        _rid, text, is_attack, source = item
+        return text, is_attack, source, client.screen_layers(text), client.screen(text)
+
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        for text, is_attack, source, lv, stack in pool.map(score_one, records):
+            # A failed call isn't a detector's judgment. Skip the whole prompt so every detector is
+            # scored on the same set, rather than counting the failure as a miss or a correct pass.
+            if lv.error:
+                errors["layers"] += 1
+                continue
+            if stack.error:
+                errors["stack"] += 1
+                continue
+            if "DEGRADED" in lv.verdicts.values():
+                errors["layer_degraded"] += 1   # a layer couldn't run: not its judgment, don't score it
+                continue
+            if stack.verdict == "DEGRADED":
+                stack_degraded += 1             # real fail-open behaviour; report it, keep it scored
+            for layer, flagged in lv.flags.items():
+                tallies.setdefault(layer, Tally()).add(is_attack, flagged)
+                by_source.setdefault((layer, source), Tally()).add(is_attack, flagged)
+                latency_us.setdefault(layer, []).append(lv.latencies.get(layer, 0))
+            if "layer3-judge" in lv.flags:
+                cost["layer3-judge"] = cost.get("layer3-judge", 0.0) + estimate_judge_cost(text, args.judge_model)
+
+            tallies.setdefault("stack", Tally()).add(is_attack, stack.flagged)
+            by_source.setdefault(("stack", source), Tally()).add(is_attack, stack.flagged)
+            latency_us.setdefault("stack", []).append(stack.latency_micros or 0)
+            if stack.flagged and is_attack and stack.layer:
+                contribution[stack.layer] = contribution.get(stack.layer, 0) + 1
+            total += 1
+            if total % 200 == 0:
+                print(f"  ...{total} prompts", file=sys.stderr)
 
     failed = sum(errors.values())
     if failed > 0.01 * (total + failed):
