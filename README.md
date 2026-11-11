@@ -5,7 +5,6 @@
 **A measured LLM prompt-injection firewall** — a language-agnostic proxy that screens LLM traffic for prompt injection in three layers, and honestly measures what each layer catches, misses, and wrongly blocks.
 
 **Live demo:** <https://bulwark-production.up.railway.app> · **Dashboard:** <https://fearlessjunco1791.grafana.net/public-dashboards/af89549ee5a54eff9119316aeb47a187>
-<!-- When the Loom walkthrough exists, add it here, e.g. · **Walkthrough:** <LOOM_URL> -->
 
 On a 200-prompt sample, the full three-layer stack **detects 82% of attacks**, **wrongly blocks ~10% of legitimate prompts**, and **lets ~18% of attacks through**. Measuring that honestly is the point — see [Results](#results--what-each-layer-buys).
 
