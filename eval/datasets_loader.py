@@ -4,7 +4,9 @@
 Some named datasets are gated on the Hub (HackAPrompt, WildGuard); they load only when an HF_TOKEN
 is available, and are skipped with a warning otherwise so the harness still runs on the open sets.
 """
-import itertools
+import hashlib
+import random
+import re
 import sys
 from dataclasses import dataclass
 from typing import Callable, Iterator
@@ -21,6 +23,40 @@ class Record:
     text: str
     label: str
     source: str
+
+
+def _normalise(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def _digest(text: str) -> bytes:
+    return hashlib.sha1(_normalise(text).encode("utf-8")).digest()
+
+
+def _unique(rows: Iterator[Record]) -> Iterator[Record]:
+    """Drop empty and duplicate texts within one source."""
+    seen: set[bytes] = set()
+    for rec in rows:
+        if not rec.text or not rec.text.strip():
+            continue
+        d = _digest(rec.text)
+        if d in seen:
+            continue
+        seen.add(d)
+        yield rec
+
+
+def _reservoir(rows: Iterator[Record], k: int, rng: random.Random) -> list[Record]:
+    """Uniform random sample of k rows from a stream (Algorithm R)."""
+    sample: list[Record] = []
+    for i, row in enumerate(rows):
+        if i < k:
+            sample.append(row)
+        else:
+            j = rng.randint(0, i)
+            if j < k:
+                sample[j] = row
+    return sample
 
 
 def _deepset() -> Iterator[Record]:
@@ -70,19 +106,26 @@ SOURCES: dict[str, Callable[[], Iterator[Record]]] = {
 }
 
 
-def load_all(limit_per_source: int | None = None) -> Iterator[Record]:
-    """Yield normalised records from every reachable source, one source at a time."""
+def load_all(limit_per_source: int | None = None, seed: int = 42) -> Iterator[Record]:
+    """Yield deduplicated records; a seeded random sample per source when limited."""
+    seen: dict[bytes, str] = {}  # digest -> label, for cross-source dedupe
     for name, loader in SOURCES.items():
         try:
-            rows = loader()
+            rows = _unique(loader())
             if limit_per_source:
-                rows = itertools.islice(rows, limit_per_source)
-            count = 0
+                rows = iter(_reservoir(rows, limit_per_source, random.Random(f"{seed}-{name}")))
+            kept = dropped = 0
             for rec in rows:
-                if rec.text and rec.text.strip():
-                    yield rec
-                    count += 1
-            print(f"  loaded {name}: {count}", file=sys.stderr)
+                d = _digest(rec.text)
+                if d in seen:
+                    if seen[d] != rec.label:
+                        print(f"  label conflict: {rec.id}", file=sys.stderr)
+                    dropped += 1
+                    continue
+                seen[d] = rec.label
+                kept += 1
+                yield rec
+            print(f"  loaded {name}: {kept} (cross-source dupes dropped: {dropped})", file=sys.stderr)
         except Exception as e:
             # Gated or unavailable dataset - keep going with the open ones.
             print(f"  skip {name}: {type(e).__name__}: {str(e)[:120]}", file=sys.stderr)
