@@ -47,28 +47,41 @@ flowchart LR
 bulwark/
 ├── pom.xml
 ├── Dockerfile                     # Railway build
+├── railway.json                   # pinned build, /health check, restart policy
 ├── docker-compose.yml             # local Postgres + classifier sidecar
 ├── .env.example
+├── .github/workflows/ci.yml       # Maven tests on push
 ├── classifier/                    # Layer 2 DeBERTa sidecar (Python / FastAPI)
-│   ├── app.py                     # POST /classify → injection probability
-│   ├── Dockerfile
-│   └── requirements.txt
+│   └── app.py                     # POST /classify → injection probability
+├── eval/                          # Python eval harness (see eval/README.md)
+│   ├── run.py                     # screen datasets, write per-prompt results
+│   ├── metrics.py                 # per-layer + full-stack results table
+│   ├── datasets_loader.py         # public datasets → {id, text, label, source}
+│   ├── pint.py                    # PINT-format loader + tallies
+│   └── client.py                  # HTTP client for /v1/screen endpoints
+├── docs/
+│   ├── technical-decisions.md
+│   └── limitations.md
 └── src/main/java/com/bulwark/
     ├── BulwarkApplication.java
     ├── HealthController.java       # GET /health
-    ├── config/UpstreamProperties.java
-    ├── config/Layer2Properties.java   # bulwark.layer2.* binding
-    ├── config/Layer3Properties.java   # bulwark.layer3.* binding
+    ├── config/
+    │   ├── UpstreamProperties.java, Layer2Properties.java, Layer3Properties.java
+    │   ├── MetricsAuthFilter.java     # bearer-token guard on /actuator/prometheus
+    │   └── AuditConfig.java           # Postgres audit DataSource, on only when configured
     ├── proxy/
-    │   ├── ChatProxyController.java   # POST /v1/chat/completions
-    │   └── UpstreamClient.java        # forwards to the upstream provider
+    │   ├── ChatProxyController.java   # POST /v1/chat/completions, /v1/screen, /v1/screen/layers
+    │   └── UpstreamClient.java        # forwards upstream; relays SSE when stream:true
     └── screening/
         ├── Layer1Scanner.java         # regex/heuristic detection
         ├── Layer2Classifier.java      # DeBERTa classifier, escalated after Layer 1
-        ├── ClassifierClient.java      # sidecar client, fails open when unreachable
+        ├── HttpClassifierClient.java  # sidecar client, fails open when unreachable
         ├── Layer3Judge.java           # LLM judge, runs only on uncertain inputs
         ├── AnthropicJudgeClient.java  # judge client (Anthropic SDK), fails open
+        ├── MessageExtractor.java      # user text + indirect fields to screen
         ├── ScreeningService.java      # orchestration + block/flag decision
+        ├── ScreeningMetrics.java      # Prometheus counters/timers per layer
+        ├── AuditLog.java              # append-only decision persistence
         ├── RefusalResponses.java      # OpenAI-shaped refusal builder
         └── DecisionLog.java           # structured per-request decision log
 ```
