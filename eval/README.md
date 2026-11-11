@@ -24,6 +24,36 @@ with a warning otherwise:
 Accepting each gated dataset's terms on its Hub page (once, with your account) is required in addition
 to authenticating.
 
+## Sampling and splits
+
+`build_sample.py` freezes a reproducible sample, so every run — and every model in a comparison — sees
+the same prompts:
+
+```bash
+python eval/build_sample.py --limit 800 --seed 42   # -> eval/data/sample.jsonl + eval/sample-manifest.json
+```
+
+- **Random, not the first N.** It takes a seeded reservoir sample from each source, so `--limit` gives a
+  random draw, not the first rows. The seed is per source, so adding a dataset later doesn't reshuffle
+  the others.
+- **Dev/test split.** Each prompt is tagged `dev` (~30%) or `test` (~70%) by hashing its text. Tune
+  thresholds and pick models on `dev`; report headline numbers on the held-out `test` split. The split is
+  stable — a prompt always lands in the same one, whatever the seed or run order.
+- **Manifest.** The sample text (`eval/data/`) is gitignored, because the gated datasets can't be
+  redistributed. `eval/sample-manifest.json` is committed instead — seed, per-source counts, and each
+  dataset's Hub revision — so the sample can be rebuilt exactly.
+
+Score against the frozen sample by passing `--sample` and `--split` (the scoring scripts default to the
+`test` split):
+
+```bash
+python eval/pint.py --sample eval/data/sample.jsonl --split test
+python eval/metrics.py --sample eval/data/sample.jsonl --split test
+```
+
+Gated sources (HackAPrompt, WildGuard) need `HF_TOKEN` and accepted terms to appear in the sample;
+without them, `build_sample.py` writes a smaller sample from the open datasets.
+
 ## Setup
 
 ```bash
