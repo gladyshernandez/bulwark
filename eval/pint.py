@@ -105,7 +105,8 @@ def main() -> None:
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     total = 0
-    errors = {"layers": 0, "stack": 0}
+    errors = {"layers": 0, "stack": 0, "layer_degraded": 0}
+    stack_degraded = 0
 
     with out.open("w", encoding="utf-8") as f:
         for rid, text, is_attack, source in load_records(args.dataset, args.limit, args.sample, args.split):
@@ -119,6 +120,11 @@ def main() -> None:
             if stack is not None and stack.error:
                 errors["stack"] += 1
                 continue
+            if "DEGRADED" in lv.verdicts.values():
+                errors["layer_degraded"] += 1   # a layer couldn't run: don't score its non-judgment
+                continue
+            if stack is not None and stack.verdict == "DEGRADED":
+                stack_degraded += 1             # real fail-open behaviour; report it, keep it scored
             row = {"id": rid, "attack": is_attack, "layers": lv.flags}
             for layer, flagged in lv.flags.items():
                 tallies.setdefault(layer, Tally()).add(is_attack, flagged)
@@ -132,9 +138,9 @@ def main() -> None:
 
     failed = sum(errors.values())
     if failed > 0.01 * (total + failed):
-        sys.exit(f"{failed} failed calls (>1%): warm the classifier, raise timeouts, and re-run")
+        sys.exit(f"{failed} failed or degraded calls (>1%): warm the classifier, raise timeouts, and re-run")
 
-    print(f"\nscored {total} prompts; skipped failed calls: {errors} -> {out}\n")
+    print(f"\nscored {total} prompts; skipped {errors}; stack fail-open (degraded, kept): {stack_degraded} -> {out}\n")
     header = (f"{'detector':16}{'attacks':>8}{'caught':>8}{'det.rate':>10}"
               f"{'benign':>8}{'FP':>5}{'FP.rate':>9}{'acc':>8}")
     print(header)

@@ -54,7 +54,8 @@ def main() -> None:
     latency_us: dict[str, list[int]] = {}
     cost: dict[str, float] = {}
     contribution: dict[str, int] = {}   # of attacks the stack caught, which layer decided
-    errors = {"layers": 0, "stack": 0}
+    errors = {"layers": 0, "stack": 0, "layer_degraded": 0}
+    stack_degraded = 0
     total = 0
 
     for _, text, is_attack, _source in load_records(args.dataset, args.limit, args.sample, args.split):
@@ -68,6 +69,11 @@ def main() -> None:
         if stack.error:
             errors["stack"] += 1
             continue
+        if "DEGRADED" in lv.verdicts.values():
+            errors["layer_degraded"] += 1   # a layer couldn't run: not its judgment, don't score it
+            continue
+        if stack.verdict == "DEGRADED":
+            stack_degraded += 1             # real fail-open behaviour; report it, keep it scored
         for layer, flagged in lv.flags.items():
             tallies.setdefault(layer, Tally()).add(is_attack, flagged)
             latency_us.setdefault(layer, []).append(lv.latencies.get(layer, 0))
@@ -84,7 +90,7 @@ def main() -> None:
 
     failed = sum(errors.values())
     if failed > 0.01 * (total + failed):
-        sys.exit(f"{failed} failed calls (>1%): warm the classifier, raise timeouts, and re-run")
+        sys.exit(f"{failed} failed or degraded calls (>1%): warm the classifier, raise timeouts, and re-run")
 
     order = ["layer1-regex", "layer2-deberta", "layer3-judge", "stack"]
     rows = []
@@ -106,12 +112,13 @@ def main() -> None:
             "est_cost_usd": round(cost.get(d, 0.0), 4),
         })
 
-    report = {"prompts": total, "detectors": rows, "stack_contribution": contribution, "errors": errors}
+    report = {"prompts": total, "detectors": rows, "stack_contribution": contribution,
+              "errors": errors, "stack_degraded": stack_degraded}
     Path(args.json_out).write_text(json.dumps(report, indent=2), encoding="utf-8")
     Path(args.md_out).write_text(render_markdown(report), encoding="utf-8")
 
     print("\n" + render_markdown(report))
-    print(f"\nscored {total} prompts; skipped failed calls: {errors}")
+    print(f"\nscored {total} prompts; skipped {errors}; stack fail-open (degraded, kept): {stack_degraded}")
     print(f"\nwrote {args.json_out} and {args.md_out}")
 
 

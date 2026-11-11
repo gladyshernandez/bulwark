@@ -28,6 +28,7 @@ class LayerVerdicts:
     """Each enabled layer's independent verdict on one prompt."""
     flags: dict[str, bool]        # layer name -> flagged (True = that layer alone called it injection)
     latencies: dict[str, int]     # layer name -> how long it took, in microseconds
+    verdicts: dict[str, str]      # layer name -> CLEAN / INJECTION / DEGRADED
     error: str | None = None
 
 
@@ -67,8 +68,9 @@ class BulwarkClient:
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            return LayerVerdicts(flags={}, latencies={}, error=str(e))
+            return LayerVerdicts(flags={}, latencies={}, verdicts={}, error=str(e))
         layers = data.get("layers", [])
         flags = {l["layer"]: bool(l.get("flagged")) for l in layers}
         latencies = {l["layer"]: int(l.get("latencyMicros") or 0) for l in layers}
-        return LayerVerdicts(flags=flags, latencies=latencies)
+        verdicts = {l["layer"]: l.get("verdict") for l in layers}
+        return LayerVerdicts(flags=flags, latencies=latencies, verdicts=verdicts)
