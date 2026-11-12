@@ -10,9 +10,12 @@ machine-readable metrics.json and a markdown results table.
 """
 import argparse
 import json
+import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+import requests
 
 from client import BulwarkClient
 from pint import Tally, load_records
@@ -33,6 +36,46 @@ def estimate_judge_cost(text: str, model: str) -> float:
     in_price, out_price = PRICES.get(model, PRICES["claude-haiku-4-5"])
     input_tokens = JUDGE_SYSTEM_TOKENS + len(text) / 4
     return (input_tokens * in_price + JUDGE_OUTPUT_TOKENS * out_price) / 1_000_000
+
+
+def git_commit() -> str | None:
+    """Short commit SHA of the working tree, so a result ties back to the code that produced it."""
+    try:
+        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
+    except Exception:
+        return None
+
+
+def classifier_model(url: str) -> str | None:
+    """The sidecar's loaded model from its /health, or None when it isn't reachable."""
+    try:
+        return requests.get(f"{url.rstrip('/')}/health", timeout=5).json().get("model")
+    except Exception:
+        return None
+
+
+def build_run_config(args) -> dict:
+    """What produced this run: code, data, and the knobs the harness can't read back from Bulwark."""
+    cfg = {
+        "commit": git_commit(),
+        "sample": args.sample,
+        "split": args.split,
+        "judge_model": args.judge_model,
+        "workers": args.workers,
+        "classifier_model": classifier_model(args.classifier_url),
+        "layer2_threshold": args.layer2_threshold,
+        "layer3_floor": args.layer3_floor,
+    }
+    if args.sample:
+        try:  # seed + per-source limit live in the manifest, not in a flag
+            man = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
+            cfg["seed"] = man.get("seed")
+            cfg["limit_per_source"] = man.get("limit_per_source")
+        except Exception:
+            pass
+    else:
+        cfg["limit_per_source"] = args.limit
+    return cfg
 
 
 def rates(t: Tally) -> dict:
@@ -58,6 +101,10 @@ def main() -> None:
     p.add_argument("--split", choices=["dev", "test", "all"], default="test")
     p.add_argument("--judge-model", default="claude-sonnet-5", help="Layer 3 model, for cost")
     p.add_argument("--workers", type=int, default=4, help="parallel requests (keep low with Layer 3 on)")
+    p.add_argument("--classifier-url", default="http://localhost:8000", help="sidecar, for its model in the run config")
+    p.add_argument("--manifest", default="eval/sample-manifest.json", help="sample manifest, for seed/limit in the run config")
+    p.add_argument("--layer2-threshold", type=float, help="record Bulwark's Layer 2 threshold in the run config")
+    p.add_argument("--layer3-floor", type=float, help="record Bulwark's Layer 3 floor in the run config")
     p.add_argument("--json-out", default="eval/metrics.json")
     p.add_argument("--md-out", default="eval/results.md")
     args = p.parse_args()
@@ -133,13 +180,15 @@ def main() -> None:
     source_rows = [{"detector": d, "source": src, **rates(t)}
                    for (d, src), t in sorted(by_source.items())]
 
-    report = {"prompts": total, "detectors": rows, "by_source": source_rows,
-              "stack_contribution": contribution, "errors": errors, "stack_degraded": stack_degraded}
+    report = {"run_config": build_run_config(args), "prompts": total, "detectors": rows,
+              "by_source": source_rows, "stack_contribution": contribution,
+              "errors": errors, "stack_degraded": stack_degraded}
     Path(args.json_out).write_text(json.dumps(report, indent=2), encoding="utf-8")
     Path(args.md_out).write_text(render_markdown(report), encoding="utf-8")
 
     print("\n" + render_markdown(report))
     print(f"\nscored {total} prompts; skipped {errors}; stack fail-open (degraded, kept): {stack_degraded}")
+    print(f"run config: {report['run_config']}")
     print(f"\nwrote {args.json_out} and {args.md_out}")
 
 
@@ -158,10 +207,18 @@ def _fp_cell(r: dict) -> str:
 
 
 def render_markdown(report: dict) -> str:
+    rc = report.get("run_config", {})
+    prov = " · ".join(f"{k}: {rc[k]}" for k in
+                      ("commit", "split", "seed", "classifier_model", "judge_model")
+                      if rc.get(k) is not None)
     lines = [
         f"# Bulwark results ({report['prompts']} prompts)",
         "",
         "Rates are percentages with a 95% Wilson interval and (hits/total).",
+    ]
+    if prov:
+        lines += ["", f"_Run: {prov}._"]
+    lines += [
         "",
         "| detector | detection rate | false-positive rate | mean latency | est. cost / 1k |",
         "|---|---:|---:|---:|---:|",
