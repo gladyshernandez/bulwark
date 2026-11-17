@@ -10,8 +10,12 @@ machine-readable metrics.json and a markdown results table.
 """
 import argparse
 import json
+import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+import requests
 
 from client import BulwarkClient
 from pint import Tally, load_records
@@ -34,6 +38,60 @@ def estimate_judge_cost(text: str, model: str) -> float:
     return (input_tokens * in_price + JUDGE_OUTPUT_TOKENS * out_price) / 1_000_000
 
 
+def git_commit() -> str | None:
+    """Short commit SHA of the working tree, so a result ties back to the code that produced it."""
+    try:
+        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
+    except Exception:
+        return None
+
+
+def classifier_model(url: str) -> str | None:
+    """The sidecar's loaded model from its /health, or None when it isn't reachable."""
+    try:
+        return requests.get(f"{url.rstrip('/')}/health", timeout=5).json().get("model")
+    except Exception:
+        return None
+
+
+def build_run_config(args) -> dict:
+    """What produced this run: code, data, and the knobs the harness can't read back from Bulwark."""
+    cfg = {
+        "commit": git_commit(),
+        "sample": args.sample,
+        "split": args.split,
+        "judge_model": args.judge_model,
+        "workers": args.workers,
+        "classifier_model": classifier_model(args.classifier_url),
+        "layer2_threshold": args.layer2_threshold,
+        "layer3_floor": args.layer3_floor,
+    }
+    if args.sample:
+        try:  # seed + per-source limit live in the manifest, not in a flag
+            man = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
+            cfg["seed"] = man.get("seed")
+            cfg["limit_per_source"] = man.get("limit_per_source")
+        except Exception:
+            pass
+    else:
+        cfg["limit_per_source"] = args.limit
+    return cfg
+
+
+def rates(t: Tally) -> dict:
+    """Detection and false-positive counts, rates, and 95% Wilson intervals for one tally."""
+    return {
+        "attacks": t.attacks,
+        "caught": t.tp,
+        "detection_rate": round(t.detection_rate, 4),
+        "detection_ci": [round(x, 4) for x in t.detection_ci],
+        "benign": t.benign,
+        "false_positives": t.fp,
+        "fp_rate": round(t.fp_rate, 4),
+        "fp_ci": [round(x, 4) for x in t.fp_ci],
+    }
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Build Bulwark's per-layer + full-stack results table.")
     p.add_argument("--base-url", default="http://localhost:8080")
@@ -42,6 +100,11 @@ def main() -> None:
     p.add_argument("--sample", help="frozen sample from build_sample.py (recommended)")
     p.add_argument("--split", choices=["dev", "test", "all"], default="test")
     p.add_argument("--judge-model", default="claude-sonnet-5", help="Layer 3 model, for cost")
+    p.add_argument("--workers", type=int, default=4, help="parallel requests (keep low with Layer 3 on)")
+    p.add_argument("--classifier-url", default="http://localhost:8000", help="sidecar, for its model in the run config")
+    p.add_argument("--manifest", default="eval/sample-manifest.json", help="sample manifest, for seed/limit in the run config")
+    p.add_argument("--layer2-threshold", type=float, help="record Bulwark's Layer 2 threshold in the run config")
+    p.add_argument("--layer3-floor", type=float, help="record Bulwark's Layer 3 floor in the run config")
     p.add_argument("--json-out", default="eval/metrics.json")
     p.add_argument("--md-out", default="eval/results.md")
     args = p.parse_args()
@@ -51,29 +114,54 @@ def main() -> None:
         sys.exit(f"Bulwark not reachable at {args.base_url}. Start it first.")
 
     tallies: dict[str, Tally] = {}
+    by_source: dict[tuple[str, str], Tally] = {}   # (detector, source) -> tally
     latency_us: dict[str, list[int]] = {}
     cost: dict[str, float] = {}
     contribution: dict[str, int] = {}   # of attacks the stack caught, which layer decided
+    errors = {"layers": 0, "stack": 0, "layer_degraded": 0}
+    stack_degraded = 0
     total = 0
 
-    for _, text, is_attack, _source in load_records(args.dataset, args.limit, args.sample, args.split):
-        lv = client.screen_layers(text)
-        if lv.error:
-            continue
-        for layer, flagged in lv.flags.items():
-            tallies.setdefault(layer, Tally()).add(is_attack, flagged)
-            latency_us.setdefault(layer, []).append(lv.latencies.get(layer, 0))
-        if "layer3-judge" in lv.flags:
-            cost["layer3-judge"] = cost.get("layer3-judge", 0.0) + estimate_judge_cost(text, args.judge_model)
+    records = load_records(args.dataset, args.limit, args.sample, args.split)
 
-        stack = client.screen(text)
-        tallies.setdefault("stack", Tally()).add(is_attack, stack.flagged)
-        latency_us.setdefault("stack", []).append(stack.latency_micros or 0)
-        if stack.flagged and is_attack and stack.layer:
-            contribution[stack.layer] = contribution.get(stack.layer, 0) + 1
-        total += 1
-        if total % 200 == 0:
-            print(f"  ...{total} prompts", file=sys.stderr)
+    def score_one(item):
+        _rid, text, is_attack, source = item
+        return text, is_attack, source, client.screen_layers(text), client.screen(text)
+
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        for text, is_attack, source, lv, stack in pool.map(score_one, records):
+            # A failed call isn't a detector's judgment. Skip the whole prompt so every detector is
+            # scored on the same set, rather than counting the failure as a miss or a correct pass.
+            if lv.error:
+                errors["layers"] += 1
+                continue
+            if stack.error:
+                errors["stack"] += 1
+                continue
+            if "DEGRADED" in lv.verdicts.values():
+                errors["layer_degraded"] += 1   # a layer couldn't run: not its judgment, don't score it
+                continue
+            if stack.verdict == "DEGRADED":
+                stack_degraded += 1             # real fail-open behaviour; report it, keep it scored
+            for layer, flagged in lv.flags.items():
+                tallies.setdefault(layer, Tally()).add(is_attack, flagged)
+                by_source.setdefault((layer, source), Tally()).add(is_attack, flagged)
+                latency_us.setdefault(layer, []).append(lv.latencies.get(layer, 0))
+            if "layer3-judge" in lv.flags:
+                cost["layer3-judge"] = cost.get("layer3-judge", 0.0) + estimate_judge_cost(text, args.judge_model)
+
+            tallies.setdefault("stack", Tally()).add(is_attack, stack.flagged)
+            by_source.setdefault(("stack", source), Tally()).add(is_attack, stack.flagged)
+            latency_us.setdefault("stack", []).append(stack.latency_micros or 0)
+            if stack.flagged and is_attack and stack.layer:
+                contribution[stack.layer] = contribution.get(stack.layer, 0) + 1
+            total += 1
+            if total % 200 == 0:
+                print(f"  ...{total} prompts", file=sys.stderr)
+
+    failed = sum(errors.values())
+    if failed > 0.01 * (total + failed):
+        sys.exit(f"{failed} failed or degraded calls (>1%): warm the classifier, raise timeouts, and re-run")
 
     order = ["layer1-regex", "layer2-deberta", "layer3-judge", "stack"]
     rows = []
@@ -84,28 +172,53 @@ def main() -> None:
         lats = latency_us.get(d, [])
         mean_ms = (sum(lats) / len(lats) / 1000) if lats else 0.0
         rows.append({
-            "detector": d,
-            "attacks": t.attacks,
-            "caught": t.tp,
-            "detection_rate": round(t.detection_rate, 4),
-            "benign": t.benign,
-            "false_positives": t.fp,
-            "fp_rate": round(t.fp_rate, 4),
+            "detector": d, **rates(t),
             "mean_latency_ms": round(mean_ms, 2),
             "est_cost_usd": round(cost.get(d, 0.0), 4),
         })
 
-    report = {"prompts": total, "detectors": rows, "stack_contribution": contribution}
+    source_rows = [{"detector": d, "source": src, **rates(t)}
+                   for (d, src), t in sorted(by_source.items())]
+
+    report = {"run_config": build_run_config(args), "prompts": total, "detectors": rows,
+              "by_source": source_rows, "stack_contribution": contribution,
+              "errors": errors, "stack_degraded": stack_degraded}
     Path(args.json_out).write_text(json.dumps(report, indent=2), encoding="utf-8")
     Path(args.md_out).write_text(render_markdown(report), encoding="utf-8")
 
     print("\n" + render_markdown(report))
+    print(f"\nscored {total} prompts; skipped {errors}; stack fail-open (degraded, kept): {stack_degraded}")
+    print(f"run config: {report['run_config']}")
     print(f"\nwrote {args.json_out} and {args.md_out}")
 
 
+def _det_cell(r: dict) -> str:
+    if not r["attacks"]:
+        return "—"
+    lo, hi = r["detection_ci"]
+    return f"{r['detection_rate']:.1%} ({lo:.1%}–{hi:.1%}, {r['caught']}/{r['attacks']})"
+
+
+def _fp_cell(r: dict) -> str:
+    if not r["benign"]:
+        return "—"
+    lo, hi = r["fp_ci"]
+    return f"{r['fp_rate']:.1%} ({lo:.1%}–{hi:.1%}, {r['false_positives']}/{r['benign']})"
+
+
 def render_markdown(report: dict) -> str:
+    rc = report.get("run_config", {})
+    prov = " · ".join(f"{k}: {rc[k]}" for k in
+                      ("commit", "split", "seed", "classifier_model", "judge_model")
+                      if rc.get(k) is not None)
     lines = [
         f"# Bulwark results ({report['prompts']} prompts)",
+        "",
+        "Rates are percentages with a 95% Wilson interval and (hits/total).",
+    ]
+    if prov:
+        lines += ["", f"_Run: {prov}._"]
+    lines += [
         "",
         "| detector | detection rate | false-positive rate | mean latency | est. cost / 1k |",
         "|---|---:|---:|---:|---:|",
@@ -113,14 +226,22 @@ def render_markdown(report: dict) -> str:
     for r in report["detectors"]:
         cost_1k = r["est_cost_usd"] / report["prompts"] * 1000 if report["prompts"] else 0.0
         cost_str = "self-hosted" if r["est_cost_usd"] == 0 else f"${cost_1k:.2f}"
-        lines.append(
-            f"| {r['detector']} | {r['detection_rate']:.1%} "
-            f"({r['caught']}/{r['attacks']}) | {r['fp_rate']:.1%} "
-            f"({r['false_positives']}/{r['benign']}) | {r['mean_latency_ms']:.1f} ms | {cost_str} |")
+        lines.append(f"| {r['detector']} | {_det_cell(r)} | {_fp_cell(r)} | "
+                     f"{r['mean_latency_ms']:.1f} ms | {cost_str} |")
+
+    if report.get("by_source"):
+        lines += ["", "## By source", "",
+                  "| detector | source | detection rate | false-positive rate |",
+                  "|---|---|---:|---:|"]
+        for r in report["by_source"]:
+            lines.append(f"| {r['detector']} | {r['source']} | {_det_cell(r)} | {_fp_cell(r)} |")
+
     contrib = report["stack_contribution"]
     if contrib:
         lines += ["", "**Full-stack detections, by deciding layer:** "
                   + ", ".join(f"{k} {v}" for k, v in sorted(contrib.items()))]
+    errs, degraded = report.get("errors", {}), report.get("stack_degraded", 0)
+    lines += ["", f"_Skipped, not scored: {errs}. Stack fail-open kept in score: {degraded}._"]
     return "\n".join(lines)
 
 
