@@ -1,6 +1,8 @@
 fastapi==0.115.4
 uvicorn[standard]==0.32.0
 transformers==4.46.2
-torch==2.5.1
+# CPU-only torch: the classifier runs on CPU, so skip the bundled CUDA/GPU libraries
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.5.1+cpu
 sentencepiece==0.2.0
 protobuf==5.28.3
