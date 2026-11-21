@@ -167,6 +167,18 @@ mvn spring-boot:run
 
 With Layer 2 enabled, a paraphrased injection that slips past the regex is caught by the classifier. If the sidecar is down, the request is forwarded (fail-open) and the gap is logged.
 
+#### Using a different classifier model
+
+The sidecar bakes `protectai/deberta-v3-base-prompt-injection` into its image by default. To swap in another prompt-injection model, set these before `docker compose up --build classifier`:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CLASSIFIER_MODEL_ID` | `protectai/deberta-v3-base-prompt-injection` | Hugging Face model id to bake in and serve |
+| `CLASSIFIER_INJECTION_LABELS` | `INJECTION` | Comma-separated label(s) that mean "injection" for that model (see its `config.json` `id2label`) |
+| `HF_TOKEN` | — | Hugging Face token, needed **only to build** with a gated model; passed as a BuildKit secret, never stored in the image |
+
+Each model names its positive class differently (`INJECTION`, `LABEL_1`, `jailbreak`, …). The sidecar maps `CLASSIFIER_INJECTION_LABELS` against the model's own labels at startup and **refuses to start** if none match, so a mislabeled model can't silently score every input backwards. `GET /health` on the sidecar reports the resolved label map and injection ids.
+
 ### Enabling Layer 3 (optional)
 
 Layer 3 stays off until you switch it on. It calls a Claude model directly (reusing `ANTHROPIC_API_KEY`), so no sidecar is needed:

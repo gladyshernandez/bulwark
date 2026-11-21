@@ -14,11 +14,22 @@ services:
   # Layer 2 DeBERTa injection classifier. The proxy calls it at http://localhost:8000
   # when BULWARK_LAYER2_URL points here; if it's down, Layer 2 fails open.
   classifier:
-    build: ./classifier
+    build:
+      context: ./classifier
+      args:
+        MODEL_ID: ${CLASSIFIER_MODEL_ID:-protectai/deberta-v3-base-prompt-injection}
+      # HF_TOKEN is only needed to build with a gated model; omit it otherwise.
+      secrets: [hf_token]
     environment:
-      MODEL_ID: protectai/deberta-v3-base-prompt-injection
+      MODEL_ID: ${CLASSIFIER_MODEL_ID:-protectai/deberta-v3-base-prompt-injection}
+      # Label(s) that mean "injection" for the chosen model; a wrong value stops the sidecar.
+      INJECTION_LABELS: ${CLASSIFIER_INJECTION_LABELS:-INJECTION}
     ports:
       - "8000:8000"
+
+secrets:
+  hf_token:
+    environment: HF_TOKEN
 
 volumes:
   pgdata:
